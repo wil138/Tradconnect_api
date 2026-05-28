@@ -1,5 +1,5 @@
 """
-WSGI config for RedPro_api project.
+WSGI config for TradConnectpi project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 

@@ -1,4 +1,4 @@
-## API de RedPro
+## API de TradConnect
 
 Esta API está diseñada para gestionar compra y venta de productos. Desarrollada con Django y Django REST Framework, incluye autenticación JWT, documentación Swagger, y conexión a SQL Server.
 
@@ -16,8 +16,8 @@ Esta API está diseñada para gestionar compra y venta de productos. Desarrollad
 
 Clona el repositorio:
 ```bash
-https://github.com/wil138/RedPro_api/
-cd RedPro
+https://github.com/wil138/TradConnect/
+cd TradConnect
 ```
 # Instala dependencias:
 ```python
@@ -70,17 +70,17 @@ Incluye el token en el encabezado:
 ## Endpoints principales
 | Tabla / Recurso     | Ruta base                                           | Métodos disponibles              | Descripción general                          |
 |---------------------|-----------------------------------------------------|----------------------------------|----------------------------------------------|
-| Usuario             | http://127.0.0.1:8000/api/redpro/usuarios/          | GET, POST, PUT, DELETE           | Gestión de usuarios del sistema              |
-| Cliente             | http://127.0.0.1:8000/api/redpro/clientes/          | GET, POST, PUT, DELETE           | Registro y administración de clientes        |
-| Proveedor           | http://127.0.0.1:8000/api/redpro/proveedores/       | GET, POST, PUT, DELETE           | Gestión de proveedores y sus productos       |
-| Establecimiento     | http://127.0.0.1:8000/api/redpro/establecimientos/  | GET, POST, PUT, DELETE           | Información de locales físicos o virtuales   |
-| Productos           | http://127.0.0.1:8000/api/redpro/productos/         | GET, POST, PUT, DELETE           | Catálogo de productos disponibles            |
-| Pedido              | http://127.0.0.1:8000/api/redpro/pedidos/           | GET, POST, PUT, DELETE           | Registro y seguimiento de pedidos            |
-| Factura             | http://127.0.0.1:8000/api/redpro/facturas/          | GET, POST, PUT, DELETE           | Generación y consulta de facturas            |
-| EstadoProducto      | http://127.0.0.1:8000/api/redpro/estado-producto/   | GET, POST, PUT, DELETE           | Estado actual de productos (activo, agotado) |
-| EstadoPedido        | http://127.0.0.1:8000/api/redpro/estado-pedido/     | GET, POST, PUT, DELETE           | Estado del pedido (pendiente, entregado)     |
-| MetodoPago          | http://127.0.0.1:8000/api/redpro/metodos-pago/      | GET, POST, PUT, DELETE           | Métodos de pago disponibles                  |
-| Categoría           | http://127.0.0.1:8000/api/redpro/categorias/        | GET, POST, PUT, DELETE           | Clasificación de productos por categoría     |]
+| Usuario             | http://127.0.0.1:8000/api/TradConnect/usuarios/          | GET, POST, PUT, DELETE           | Gestión de usuarios del sistema              |
+| Cliente             | http://127.0.0.1:8000/api/TradConnect/clientes/          | GET, POST, PUT, DELETE           | Registro y administración de clientes        |
+| Proveedor           | http://127.0.0.1:8000/api/TradConnect/proveedores/       | GET, POST, PUT, DELETE           | Gestión de proveedores y sus productos       |
+| Establecimiento     | http://127.0.0.1:8000/api/TradConnect/establecimientos/  | GET, POST, PUT, DELETE           | Información de locales físicos o virtuales   |
+| Productos           | http://127.0.0.1:8000/api/TradConnect/productos/         | GET, POST, PUT, DELETE           | Catálogo de productos disponibles            |
+| Pedido              | http://127.0.0.1:8000/api/TradConnect/pedidos/           | GET, POST, PUT, DELETE           | Registro y seguimiento de pedidos            |
+| Factura             | http://127.0.0.1:8000/api/TradConnect/facturas/          | GET, POST, PUT, DELETE           | Generación y consulta de facturas            |
+| EstadoProducto      | http://127.0.0.1:8000/api/TradConnect/estado-producto/   | GET, POST, PUT, DELETE           | Estado actual de productos (activo, agotado) |
+| EstadoPedido        | http://127.0.0.1:8000/api/TradConnect/estado-pedido/     | GET, POST, PUT, DELETE           | Estado del pedido (pendiente, entregado)     |
+| MetodoPago          | http://127.0.0.1:8000/api/TradConnect/metodos-pago/      | GET, POST, PUT, DELETE           | Métodos de pago disponibles                  |
+| Categoría           | http://127.0.0.1:8000/api/TradConnect/categorias/        | GET, POST, PUT, DELETE           | Clasificación de productos por categoría     |]
 
 # Pruebas
 - Apidog
@@ -89,7 +89,7 @@ Incluye el token en el encabezado:
 ## Estructura del proyecto
 
 ```plaintext
-RedPro/
+TradConnect/
 ├── config/
 │   ├── __pycache__/
 │   ├── __init__.py
@@ -97,7 +97,7 @@ RedPro/
 │   ├── settings.py
 │   ├── urls.py
 │   └── wsgi.py
-├── RedPro_api/
+├── TradConnect/
 │   ├── __pycache__/
 │   ├── __init__.py
 │   ├── admin.py
@@ -117,9 +117,10 @@ Estudiantes de Ingeniería en Sistemas de cuarto semestre de la UNAN-MANAGUA
 -Katerin Jimena Flores Amador
 
 
+
 - Email:
 -  [w138jvc@gmail.com]
 -  [sanchezjunice61@gmail.com]
 -  [fkaterin163@gmail.com]
 
-- GitHub: Whil138
+- GitHub: [Whil138](https://github.com/Whil138)

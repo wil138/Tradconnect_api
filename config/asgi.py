@@ -1,5 +1,5 @@
 """
-ASGI config for RedPro_api project.
+ASGI config for TradConnectpi project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
