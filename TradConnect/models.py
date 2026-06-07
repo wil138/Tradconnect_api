@@ -1,4 +1,4 @@
-# python manage.py inspectdb > TradConect/models.py
+# python manage.py inspectdb > TradConect/models.py                     
 # This is an auto-generated Django model module.
 # You'll have to do the following manually to clean this up:
 #   * Rearrange models' order
@@ -37,7 +37,6 @@ class Detallepedido(models.Model):
     cantidad = models.DecimalField(db_column='Cantidad', max_digits=12, decimal_places=2)  # Field name made lowercase.
     preciounitario = models.DecimalField(db_column='PrecioUnitario', max_digits=12, decimal_places=2)  # Field name made lowercase.
     descuentoaplicado = models.DecimalField(db_column='DescuentoAplicado', max_digits=5, decimal_places=2, blank=True, null=True)  # Field name made lowercase.
-    subtotal = models.DecimalField(db_column='Subtotal', max_digits=12, decimal_places=2, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         managed = False
@@ -76,28 +75,13 @@ class Empresa(models.Model):
 class Estadopedido(models.Model):
     id = models.AutoField(db_column='Id', primary_key=True)  # Field name made lowercase.
     estadonombre = models.CharField(db_column='EstadoNombre', max_length=50, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
+    orden = models.IntegerField(db_column='Orden')  # Field name made lowercase.
     icono = models.CharField(db_column='Icono', max_length=50, db_collation='SQL_Latin1_General_CP1_CI_AS', blank=True, null=True)  # Field name made lowercase.
     colorhex = models.CharField(db_column='ColorHex', max_length=7, db_collation='SQL_Latin1_General_CP1_CI_AS', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         managed = False
         db_table = 'EstadoPedido'
-
-
-class Factura(models.Model):
-    id = models.AutoField(db_column='Id', primary_key=True)  # Field name made lowercase.
-    pedidoid = models.ForeignKey('Pedido', models.DO_NOTHING, db_column='PedidoId')  # Field name made lowercase.
-    numerofactura = models.CharField(db_column='NumeroFactura', max_length=50, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
-    fechaemision = models.DateTimeField(db_column='FechaEmision', blank=True, null=True)  # Field name made lowercase.
-    subtotalfactura = models.DecimalField(db_column='SubtotalFactura', max_digits=12, decimal_places=2)  # Field name made lowercase.
-    totalimpuestos = models.DecimalField(db_column='TotalImpuestos', max_digits=12, decimal_places=2)  # Field name made lowercase.
-    totalfacturado = models.DecimalField(db_column='TotalFacturado', max_digits=12, decimal_places=2)  # Field name made lowercase.
-    icono = models.CharField(db_column='Icono', max_length=50, db_collation='SQL_Latin1_General_CP1_CI_AS', blank=True, null=True)  # Field name made lowercase.
-    urlpdf = models.CharField(db_column='UrlPdf', max_length=500, db_collation='SQL_Latin1_General_CP1_CI_AS', blank=True, null=True)  # Field name made lowercase.
-
-    class Meta:
-        managed = False
-        db_table = 'Factura'
 
 
 class Historialestadopedido(models.Model):
@@ -113,17 +97,16 @@ class Historialestadopedido(models.Model):
 
 
 class Inventariobodega(models.Model):
-    productoid = models.ForeignKey('Producto', models.DO_NOTHING, db_column='ProductoId')
-    sucursalid = models.ForeignKey('Sucursal', models.DO_NOTHING, db_column='SucursalId')
-    stockdisponible = models.DecimalField(db_column='StockDisponible', max_digits=12, decimal_places=2)
-    stockminimo = models.DecimalField(db_column='StockMinimo', max_digits=12, decimal_places=2, blank=True, null=True)
-    ultimaactualizacion = models.DateTimeField(db_column='UltimaActualizacion', blank=True, null=True)
+    id = models.AutoField(db_column='Id', primary_key=True)  # Field name made lowercase.
+    productoid = models.ForeignKey('Producto', models.DO_NOTHING, db_column='ProductoId')  # Field name made lowercase.
+    sucursalid = models.ForeignKey('Sucursal', models.DO_NOTHING, db_column='SucursalId')  # Field name made lowercase.
+    stockdisponible = models.DecimalField(db_column='StockDisponible', max_digits=12, decimal_places=2)  # Field name made lowercase.
+    stockminimo = models.DecimalField(db_column='StockMinimo', max_digits=12, decimal_places=2, blank=True, null=True)  # Field name made lowercase.
+    ultimaactualizacion = models.DateTimeField(db_column='UltimaActualizacion', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         managed = False
         db_table = 'InventarioBodega'
-        unique_together = (('productoid', 'sucursalid'),)
-
 
 
 class Metodopago(models.Model):
@@ -164,7 +147,6 @@ class Pedido(models.Model):
     proveedorid = models.ForeignKey(Empresa, models.DO_NOTHING, db_column='ProveedorId', related_name='pedido_proveedorid_set')  # Field name made lowercase.
     sucursalorigenid = models.ForeignKey('Sucursal', models.DO_NOTHING, db_column='SucursalOrigenId')  # Field name made lowercase.
     sucursalentregaid = models.ForeignKey('Sucursal', models.DO_NOTHING, db_column='SucursalEntregaId', related_name='pedido_sucursalentregaid_set')  # Field name made lowercase.
-    estadoid = models.ForeignKey(Estadopedido, models.DO_NOTHING, db_column='EstadoId')  # Field name made lowercase.
     monedaid = models.ForeignKey(Moneda, models.DO_NOTHING, db_column='MonedaId')  # Field name made lowercase.
     metodopagoid = models.ForeignKey(Metodopago, models.DO_NOTHING, db_column='MetodoPagoId')  # Field name made lowercase.
     subtotal = models.DecimalField(db_column='Subtotal', max_digits=12, decimal_places=2)  # Field name made lowercase.
@@ -180,7 +162,7 @@ class Pedido(models.Model):
 
 class Producto(models.Model):
     id = models.AutoField(db_column='Id', primary_key=True)  # Field name made lowercase.
-    sucursalid = models.ForeignKey('Sucursal', models.DO_NOTHING, db_column='SucursalId')  # Field name made lowercase.
+    empresaid = models.ForeignKey(Empresa, models.DO_NOTHING, db_column='EmpresaId')  # Field name made lowercase.
     categoriaid = models.ForeignKey(Categoria, models.DO_NOTHING, db_column='CategoriaId')  # Field name made lowercase.
     unidadmedidaid = models.ForeignKey('Unidadmedida', models.DO_NOTHING, db_column='UnidadMedidaId')  # Field name made lowercase.
     nombreproducto = models.CharField(db_column='NombreProducto', max_length=150, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
@@ -269,16 +251,3 @@ class Usuario(models.Model):
     class Meta:
         managed = False
         db_table = 'Usuario'
-
-
-class Sysdiagrams(models.Model):
-    name = models.CharField(max_length=128, db_collation='SQL_Latin1_General_CP1_CI_AS')
-    principal_id = models.IntegerField()
-    diagram_id = models.AutoField(primary_key=True)
-    version = models.IntegerField(blank=True, null=True)
-    definition = models.BinaryField(blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = 'sysdiagrams'
-        unique_together = (('principal_id', 'name'),)
