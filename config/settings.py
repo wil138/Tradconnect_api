@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # =========================================================
 # SEGURIDAD BÁSICA
 # =========================================================
-SECRET_KEY = '1qa2ws3ed'
+SECRET_KEY = 'django-insecure-+_!@#4$%&*()_+your_secret_key_here_+()&*%$#@!_'
 DEBUG = True
 ALLOWED_HOSTS = ['*']
 
@@ -123,15 +123,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # =========================================================
 # DJANGO REST FRAMEWORK
 # =========================================================
+# config/settings.py
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',  # ← Cambiado
     ),
 }
-
 # =========================================================
 # CONFIGURACIÓN JWT
 # =========================================================
@@ -172,4 +173,3 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
 ]
-
