@@ -35,6 +35,8 @@ auth_routes = [
     path('auth/me/', views.AuthViewSet.as_view({'get': 'me'}), name='auth-me'),
     path('auth/my-data/', views.AuthViewSet.as_view({'get': 'my_data'}), name='auth-my-data'),
     path('auth/dump-all/', views.AuthViewSet.as_view({'post': 'dump_all_data'}), name='auth-dump-all'),
+    path('auth/change-password/', views.AuthViewSet.as_view({'post': 'change_password'}), name='auth-change-password'),
+    path('auth/update-profile/', views.AuthViewSet.as_view({'put': 'update_profile'}), name='auth-update-profile'),
 ]
 
 urlpatterns = [

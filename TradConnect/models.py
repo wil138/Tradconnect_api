@@ -245,9 +245,26 @@ class Usuario(models.Model):
     rolid = models.ForeignKey(Rol, models.DO_NOTHING, db_column='RolId')  # Field name made lowercase.
     nombreusuario = models.CharField(db_column='NombreUsuario', max_length=100, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
     correoelectronico = models.CharField(db_column='CorreoElectronico', unique=True, max_length=150, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
-    contrasena = models.CharField(db_column='Contrasena', max_length=100, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Field name made lowercase.
+    contrasena = models.CharField(db_column='Contrasena', max_length=255, db_collation='SQL_Latin1_General_CP1_CI_AS')  # Ampliado de 100 a 255 para hashes bcrypt/pbkdf2
     fecharegistro = models.DateTimeField(db_column='FechaRegistro')  # Field name made lowercase.
 
     class Meta:
         managed = False
         db_table = 'Usuario'
+
+    # ── Propiedades requeridas por DRF / IsAuthenticated ──────────────────────
+    @property
+    def is_authenticated(self):
+        """DRF lo verifica para IsAuthenticated. Siempre True si el objeto existe."""
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    @property
+    def is_active(self):
+        return True
+
+    def __str__(self):
+        return self.nombreusuario or self.correoelectronico

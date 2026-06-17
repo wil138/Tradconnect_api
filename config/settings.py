@@ -127,10 +127,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Backend propio en authentication.py — separado de views.py
+        # para evitar importación circular con DRF al arrancar Django.
+        'TradConnect.authentication.UsuarioJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',  # ← Cambiado
+        'TradConnect.authentication.IsUsuarioAutenticado',
     ),
 }
 # =========================================================
@@ -142,10 +144,14 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
+    # user_id se guarda en el claim 'user_id' del token (pk del modelo Usuario)
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    # Desactivar la validación del modelo de usuario de Django —
+    # nuestro UsuarioJWTAuthentication en views.py resuelve el Usuario propio
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
 }
 
 # =========================================================

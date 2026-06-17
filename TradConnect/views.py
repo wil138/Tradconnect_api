@@ -13,7 +13,7 @@ from django.db.models.functions import TruncMonth
 from django.contrib.auth.hashers import make_password, check_password
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-
+from rest_framework.viewsets import ReadOnlyModelViewSet
 from .models import (
     Usuario, Empresa, Rol, Producto, Sucursal, Pedido, Detallepedido,
     Inventariobodega, Historialestadopedido, Documentosucursal,
@@ -21,7 +21,7 @@ from .models import (
     Municipio, Departamento, Tipodocumento
 )
 from .serializers import (
-    UsuarioSerializer, EmpresaSerializer, SucursalSerializer,
+    UsuarioSerializer, PublicSucursalSerializer, PublicInventarioSerializer, PublicPromocionSerializer, EmpresaSerializer, SucursalSerializer,
     ProductoSerializer, PedidoSerializer, DetallePedidoSerializer,
     HistorialEstadoPedidoSerializer, DocumentoSucursalSerializer,
     PromocionSerializer, InventarioBodegaSerializer,
@@ -30,9 +30,14 @@ from .serializers import (
     DepartamentoSerializer, MunicipioSerializer, TipoDocumentoSerializer
 )
 
-# CORRECCIÓN: instanciar JWTAuthentication()
-DEFAULT_AUTH = [JWTAuthentication]
-DEFAULT_PERMS = [IsAuthenticated]
+# =========================================================
+# AUTENTICACIÓN PERSONALIZADA — importada desde authentication.py
+# (definirlas aquí causaba import circular con DRF settings al arrancar)
+# =========================================================
+from .authentication import UsuarioJWTAuthentication, IsUsuarioAutenticado
+
+DEFAULT_AUTH = [UsuarioJWTAuthentication]
+DEFAULT_PERMS = [IsUsuarioAutenticado]
 
 # =========================================================
 # AUTENTICACIÓN (público) con Swagger
@@ -150,21 +155,9 @@ class AuthViewSet(viewsets.ViewSet):
         responses={200: 'OK', 401: 'No autenticado'},
         tags=['Perfil']
     )
-    @action(detail=False, methods=['get'], authentication_classes=DEFAULT_AUTH, permission_classes=DEFAULT_PERMS)
+    @action(detail=False, methods=['get'], authentication_classes=DEFAULT_AUTH, permission_classes=[IsUsuarioAutenticado])
     def me(self, request):
-        # 🔐 Solución robusta: extraer usuario manualmente del token
-        # Esto evita problemas con el modelo de usuario personalizado
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return Response({'error': 'Token no proporcionado o formato inválido'}, status=401)
-        token = auth_header.split(' ')[1]
-        try:
-            access_token = AccessToken(token)
-            user_id = access_token['user_id']
-            usuario = Usuario.objects.get(id=user_id)
-        except Exception as e:
-            return Response({'error': f'Token inválido: {str(e)}'}, status=401)
-
+        usuario = request.user
         empresa = Empresa.objects.filter(usuarioid=usuario).first()
         return Response({
             'usuario': UsuarioSerializer(usuario).data,
@@ -177,20 +170,9 @@ class AuthViewSet(viewsets.ViewSet):
         responses={200: 'OK', 401: 'No autenticado'},
         tags=['Perfil']
     )
-    @action(detail=False, methods=['get'], authentication_classes=DEFAULT_AUTH, permission_classes=DEFAULT_PERMS)
+    @action(detail=False, methods=['get'], authentication_classes=DEFAULT_AUTH, permission_classes=[IsUsuarioAutenticado])
     def my_data(self, request):
-        # Extraer usuario manualmente también (por consistencia)
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return Response({'error': 'Token no proporcionado'}, status=401)
-        token = auth_header.split(' ')[1]
-        try:
-            access_token = AccessToken(token)
-            user_id = access_token['user_id']
-            usuario = Usuario.objects.get(id=user_id)
-        except Exception:
-            return Response({'error': 'Token inválido'}, status=401)
-
+        usuario = request.user
         empresa = Empresa.objects.filter(usuarioid=usuario).first()
         if not empresa:
             return Response({'error': 'Usuario sin empresa'}, status=400)
@@ -289,15 +271,23 @@ class AuthViewSet(viewsets.ViewSet):
 # =========================================================
 # MARKETPLACE (público, solo lectura)
 # =========================================================
+# views.py – dentro de MarketplaceViewSet o un viewset aparte
+
 class MarketplaceViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Producto.objects.filter(eliminado=False)
-    serializer_class = ProductoSerializer
     permission_classes = [AllowAny]
+    serializer_class = ProductoSerializer
 
-    @swagger_auto_schema(tags=['Marketplace'])
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
+    def get_queryset(self):
+        # Productos con stock > 0 en alguna sucursal activa
+        productos_con_stock = Inventariobodega.objects.filter(
+            stockdisponible__gt=0,
+            sucursalid__estado__iexact='activo'
+        ).values_list('productoid', flat=True).distinct()
 
+        return Producto.objects.filter(
+            id__in=productos_con_stock,
+            eliminado=False
+        ).select_related('empresaid', 'categoriaid', 'unidadmedidaid')
 # =========================================================
 # EMPRESAS (privado)
 # =========================================================
@@ -333,13 +323,10 @@ class ProductoViewSet(viewsets.ModelViewSet):
     permission_classes = DEFAULT_PERMS
 
     def get_queryset(self):
-        # 🔴 Protección contra peticiones falsas de Swagger
         if getattr(self, 'swagger_fake_view', False):
             return Producto.objects.none()
-        # 🔴 Protección contra usuario anónimo
-        if not self.request.user or self.request.user.is_anonymous:
-            return Producto.objects.none()
-        empresa = Empresa.objects.filter(usuarioid=self.request.user).first()
+        usuario = self.request.user
+        empresa = Empresa.objects.filter(usuarioid=usuario).first()
         if not empresa:
             return Producto.objects.none()
         return Producto.objects.filter(empresaid=empresa, eliminado=False)
@@ -363,9 +350,8 @@ class InventarioBodegaViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Inventariobodega.objects.none()
-        if not self.request.user or self.request.user.is_anonymous:
-            return Inventariobodega.objects.none()
-        empresa = Empresa.objects.filter(usuarioid=self.request.user).first()
+        usuario = self.request.user
+        empresa = Empresa.objects.filter(usuarioid=usuario).first()
         if not empresa:
             return Inventariobodega.objects.none()
         return Inventariobodega.objects.filter(sucursalid__empresaid=empresa)
@@ -385,9 +371,8 @@ class PromocionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Promocion.objects.none()
-        if not self.request.user or self.request.user.is_anonymous:
-            return Promocion.objects.none()
-        empresa = Empresa.objects.filter(usuarioid=self.request.user).first()
+        usuario = self.request.user
+        empresa = Empresa.objects.filter(usuarioid=usuario).first()
         if not empresa:
             return Promocion.objects.none()
         return Promocion.objects.filter(productoid__empresaid=empresa)
@@ -407,16 +392,13 @@ class PedidoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Pedido.objects.none()
-        if not self.request.user or self.request.user.is_anonymous:
-            return Pedido.objects.none()
-        user = self.request.user
-        empresa = Empresa.objects.filter(usuarioid=user).first()
+        usuario = self.request.user
+        empresa = Empresa.objects.filter(usuarioid=usuario).first()
         if not empresa:
             return Pedido.objects.none()
         if empresa.rolid.nombrerol == 'Restaurante':
             return Pedido.objects.filter(restauranteid=empresa)
-        else:
-            return Pedido.objects.filter(proveedorid=empresa)
+        return Pedido.objects.filter(proveedorid=empresa)
 
     @swagger_auto_schema(
         operation_description="Crear un nuevo pedido (solo restaurantes)",
@@ -611,7 +593,7 @@ class ProviderDashboardViewSet(viewsets.ViewSet):
     permission_classes = DEFAULT_PERMS
 
     def _check_swagger(self, request):
-        return getattr(self, 'swagger_fake_view', False) or not request.user or request.user.is_anonymous
+        return getattr(self, 'swagger_fake_view', False) or not getattr(request, 'user', None)
 
     @swagger_auto_schema(
         operation_description="Resumen de ventas, pedidos y productos con stock bajo",
@@ -764,3 +746,27 @@ class TipoDocumentoViewSet(viewsets.ReadOnlyModelViewSet):
     @swagger_auto_schema(tags=['Catálogos Públicos'])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+class PublicSucursalViewSet(viewsets.ReadOnlyModelViewSet):
+    """Lista de sucursales públicas (solo activas)"""
+    queryset = Sucursal.objects.filter(estado__iexact='activo')  # ajusta según tu campo estado
+    serializer_class = PublicSucursalSerializer
+    permission_classes = [AllowAny]
+
+class PublicInventarioViewSet(viewsets.ReadOnlyModelViewSet):
+    """Inventario público: solo productos con stock > 0 y sucursales activas"""
+    queryset = Inventariobodega.objects.filter(
+        stockdisponible__gt=0,
+        sucursalid__estado__iexact='activo'
+    ).select_related('productoid', 'sucursalid')
+    serializer_class = PublicInventarioSerializer
+    permission_classes = [AllowAny]
+
+class PublicPromocionViewSet(viewsets.ReadOnlyModelViewSet):
+    """Promociones vigentes (fecha actual dentro del rango)"""
+    queryset = Promocion.objects.filter(
+        fechainicio__lte=timezone.now().date(),
+        fechafin__gte=timezone.now().date()
+    ).select_related('productoid')
+    serializer_class = PublicPromocionSerializer
+    permission_classes = [AllowAny]

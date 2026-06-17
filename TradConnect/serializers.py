@@ -99,20 +99,98 @@ class SucursalSerializer(serializers.ModelSerializer):
 # PRODUCTOS (con stock actual desde InventarioBodega)
 # =========================================================
 class ProductoSerializer(serializers.ModelSerializer):
+    empresa_id = serializers.IntegerField(source='empresaid.id', read_only=True)
+    empresa_nombre = serializers.CharField(source='empresaid.razonsocial', read_only=True)
+    inventario = serializers.SerializerMethodField()
+    promociones = serializers.SerializerMethodField()
     categoria_nombre = serializers.CharField(source='categoriaid.nombrecategoria', read_only=True)
     unidad_nombre = serializers.CharField(source='unidadmedidaid.nombreunidad', read_only=True)
-    stock_disponible = serializers.SerializerMethodField()
+    
+    # Campos para marketplace (precio con descuento, etc.)
+    precio_final = serializers.SerializerMethodField()
+    precio_original = serializers.SerializerMethodField()
+    descuento = serializers.SerializerMethodField()
+    promocion_activa = serializers.SerializerMethodField()
+    sucursal_origen_id = serializers.SerializerMethodField()
+
     class Meta:
         model = Producto
-        fields = ['id', 'empresaid', 'categoriaid', 'categoria_nombre',
-                  'unidadmedidaid', 'unidad_nombre', 'nombreproducto', 'descripcion',
-                  'precioventa', 'cantidadminimapedido', 'esperecedero', 'diasvidautil',
-                  'imagenurl', 'eliminado', 'stock_disponible']
+        fields = [
+            'id', 'empresa_id', 'empresa_nombre',
+            'nombreproducto', 'descripcion', 'precioventa',
+            'imagenurl', 'categoria_nombre', 'unidad_nombre',
+            'esperecedero', 'diasvidautil',
+            'inventario', 'promociones',
+            'precio_final', 'precio_original', 'descuento', 'promocion_activa',
+            'sucursal_origen_id'
+        ]
 
-    def get_stock_disponible(self, obj):
-        # Suma de stock en todas las sucursales de la empresa (para vista general)
-        total = Inventariobodega.objects.filter(productoid=obj).aggregate(total=models.Sum('stockdisponible'))['total']
-        return float(total) if total else 0.0
+    def get_inventario(self, obj):
+        inventario_qs = Inventariobodega.objects.filter(
+            productoid=obj,
+            stockdisponible__gt=0,
+            sucursalid__estado__iexact='activo'
+        ).select_related('sucursalid')
+        return [
+            {
+                'sucursal_id': inv.sucursalid.id,
+                'sucursal_nombre': inv.sucursalid.nombresucursal,
+                'direccion': inv.sucursalid.direccionexacta,
+                'telefono': inv.sucursalid.telefonosucursal,
+                'horario': inv.sucursalid.horarioatencion,
+                'stock': float(inv.stockdisponible),
+                'stock_minimo': float(inv.stockminimo) if inv.stockminimo else None,
+            }
+            for inv in inventario_qs
+        ]
+
+    def get_promociones(self, obj):
+        hoy = timezone.now().date()
+        promociones_qs = Promocion.objects.filter(
+            productoid=obj,
+            fechainicio__lte=hoy,
+            fechafin__gte=hoy
+        )
+        return [
+            {
+                'id': p.id,
+                'descripcion': p.descripcion,
+                'porcentaje_descuento': float(p.porcentajedescuento),
+                'cantidad_minima': p.cantidadminima,
+                'fecha_inicio': p.fechainicio,
+                'fecha_fin': p.fechafin,
+            }
+            for p in promociones_qs
+        ]
+
+    def get_precio_final(self, obj):
+        """Precio con el mayor descuento aplicable (si hay promoción activa)"""
+        promociones = self.get_promociones(obj)
+        if promociones:
+            # Tomar el mayor descuento
+            max_descuento = max(p['porcentaje_descuento'] for p in promociones)
+            return float(obj.precioventa) * (1 - max_descuento / 100)
+        return float(obj.precioventa)
+
+    def get_precio_original(self, obj):
+        return float(obj.precioventa)
+
+    def get_descuento(self, obj):
+        promociones = self.get_promociones(obj)
+        if promociones:
+            max_descuento = max(p['porcentaje_descuento'] for p in promociones)
+            return max_descuento
+        return 0
+
+    def get_promocion_activa(self, obj):
+        return bool(self.get_promociones(obj))
+
+    def get_sucursal_origen_id(self, obj):
+        """Devuelve la primera sucursal con stock como origen (para el carrito)"""
+        inventario = self.get_inventario(obj)
+        if inventario:
+            return inventario[0]['sucursal_id']
+        return None
 
 # =========================================================
 # INVENTARIO POR BODEGA
@@ -158,7 +236,7 @@ class PedidoSerializer(serializers.ModelSerializer):
     estado_color = serializers.SerializerMethodField()
     estado_icono = serializers.SerializerMethodField()
     fecha_completado = serializers.SerializerMethodField()
-    tiene_factura = serializers.SerializerMethodField()   # True si estado = "Completado"
+    tiene_factura = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
@@ -206,3 +284,30 @@ class DocumentoSucursalSerializer(serializers.ModelSerializer):
         model = Documentosucursal
         fields = ['id', 'sucursalid', 'sucursal_nombre', 'tipodocumentoid',
                   'tipo_documento_nombre', 'urlarchivo', 'fechasubida']
+
+# =========================================================
+# SERIALIZERS PÚBLICOS (para marketplace)
+# =========================================================
+class PublicSucursalSerializer(serializers.ModelSerializer):
+    municipio_nombre = serializers.CharField(source='municipioid.nombremunicipio', read_only=True)
+    class Meta:
+        model = Sucursal
+        fields = ['id', 'nombresucursal', 'direccionexacta', 'telefonosucursal',
+                  'horarioatencion', 'municipio_nombre', 'estado']
+
+class PublicInventarioSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source='productoid.nombreproducto', read_only=True)
+    producto_precio = serializers.DecimalField(source='productoid.precioventa', read_only=True, max_digits=12, decimal_places=2)
+    producto_imagen = serializers.CharField(source='productoid.imagenurl', read_only=True)
+    sucursal_nombre = serializers.CharField(source='sucursalid.nombresucursal', read_only=True)
+    class Meta:
+        model = Inventariobodega
+        fields = ['id', 'producto_nombre', 'producto_precio', 'producto_imagen',
+                  'sucursal_nombre', 'stockdisponible', 'stockminimo']
+
+class PublicPromocionSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source='productoid.nombreproducto', read_only=True)
+    class Meta:
+        model = Promocion
+        fields = ['id', 'producto_nombre', 'descripcion', 'porcentajedescuento',
+                  'fechainicio', 'fechafin']
