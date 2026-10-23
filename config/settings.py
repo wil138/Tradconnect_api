@@ -2,14 +2,12 @@
 Django settings for TradConnectpi project.
 """
 
+import os
 from pathlib import Path
 from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# =========================================================
-# SEGURIDAD BÁSICA
-# =========================================================
 SECRET_KEY = 'django-insecure-+_!@#4$%&*()_+your_secret_key_here_+()&*%$#@!_'
 DEBUG = True
 ALLOWED_HOSTS = ['*']
@@ -24,14 +22,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Terceros
     'rest_framework',
     'drf_yasg',
     'corsheaders',
-    
+
     # Local
-    'TradConnect',
+    'TradConnect',          # tu app principal (con modelos de negocio)
+    'Tradconnect_no_sql',
 ]
 
 # =========================================================
@@ -48,10 +47,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# =========================================================
-# CONFIGURACIÓN DE URLs
-# =========================================================
-ROOT_URLCONF = 'config.urls'
+
+ROOT_URLCONF = 'config.urls'   # tu archivo principal de rutas
 
 TEMPLATES = [
     {
@@ -72,110 +69,77 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # =========================================================
-# BASE DE DATOS SQL Server
+# BASE DE DATOS – SQL Server (default) + Data Warehouse
 # =========================================================
 DATABASES = {
     'default': {
         'ENGINE': 'mssql',
-        'NAME': 'TC',
+        'NAME': 'TC',                     # tu base de datos transaccional
         'HOST': 'Wil\\WIL',
         'PORT': '',
         'OPTIONS': {
             'driver': 'ODBC Driver 17 for SQL Server',
             'extra_params': 'TrustServerCertificate=yes',
         },
-    }
+    },
+    
 }
+
+# =========================================================
+# ROUTER PARA DIRIGIR MODELOS DEL DW A LA BD 'trad_dw'
+# =========================================================
+DATABASE_ROUTERS = []
+
+# =========================================================
+# MONGODB (PyMongo; separado de las bases SQL de Django)
+# =========================================================
+MONGODB_URI = os.environ.get('MONGODB_URI')
+MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE', 'tradconnect')
 
 # =========================================================
 # VALIDACIÓN DE CONTRASEÑAS
 # =========================================================
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# =========================================================
-# INTERNACIONALIZACIÓN
-# =========================================================
 LANGUAGE_CODE = 'es-ni'
 TIME_ZONE = 'America/Managua'
 USE_I18N = True
 USE_TZ = True
 
-# =========================================================
-# ARCHIVOS ESTÁTICOS
-# =========================================================
 STATIC_URL = 'static/'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # =========================================================
 # DJANGO REST FRAMEWORK
 # =========================================================
-# config/settings.py
-
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # Backend propio en authentication.py — separado de views.py
-        # para evitar importación circular con DRF al arrancar Django.
         'TradConnect.authentication.UsuarioJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'TradConnect.authentication.IsUsuarioAutenticado',
     ),
 }
-# =========================================================
-# CONFIGURACIÓN JWT
-# =========================================================
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
-    # user_id se guarda en el claim 'user_id' del token (pk del modelo Usuario)
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    # Desactivar la validación del modelo de usuario de Django —
-    # nuestro UsuarioJWTAuthentication en views.py resuelve el Usuario propio
     'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
 }
 
-# =========================================================
-# CONFIGURACIÓN CORS
-# =========================================================
 CORS_ALLOW_ALL_ORIGINS = True
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
+CORS_ALLOW_HEADERS = ['accept', 'accept-encoding', 'authorization', 'content-type',
+                      'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with']

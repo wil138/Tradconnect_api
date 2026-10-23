@@ -22,11 +22,14 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
-    # API principal con todas las rutas
+
+    # API principal (rutas de la app TradConnect, por ejemplo usuarios, productos, etc.)
     path('api/', include('TradConnect.urls')),
-    
-    # Documentación Swagger/OpenAPI
+
+    # NUEVO: endpoints de análisis del Data Warehouse
+    path('api/nosql/', include('Tradconnect_no_sql.urls')),
+
+    # Documentación Swagger
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('swagger.json/', schema_view.without_ui(cache_timeout=0), name='schema-json'),

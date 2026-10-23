@@ -1,0 +1,127 @@
+{
+  "preferencias_negocio": [
+    {
+      "_id": "pref_demo_1",
+      "empresa_id": "1",
+      "usuario_id": "1",
+      "horario_entrega_preferido": "08:00-10:00",
+      "fecha_actualizacion": "2026-10-23T08:00:00-06:00"
+    }
+  ],
+  "preferencias_categorias": [
+    {
+      "_id": "pc_demo_1",
+      "preferencia_id": "pref_demo_1",
+      "categoria_id_sql": 1
+    }
+  ],
+  "preferencias_productos": [
+    {
+      "_id": "pp_demo_1",
+      "preferencia_id": "pref_demo_1",
+      "producto_id_sql": 1,
+      "nombre": "Producto de ejemplo"
+    }
+  ],
+  "preferencias_metodos_pago": [
+    {
+      "_id": "pm_demo_1",
+      "preferencia_id": "pref_demo_1",
+      "metodo_pago_id_sql": 1
+    }
+  ],
+  "evaluaciones_proveedores": [
+    {
+      "_id": "ev_demo_1",
+      "pedido_id_sql": 1,
+      "cliente_empresa_id": "1",
+      "cliente_nombre": "Restaurante de ejemplo",
+      "proveedor_empresa_id": "2",
+      "proveedor_nombre": "Proveedor de ejemplo",
+      "puntuacion": 4.5,
+      "calidad": 5,
+      "tiempo_entrega": 4,
+      "precio": 4,
+      "atencion": 5,
+      "fecha": "2026-10-23T08:00:00-06:00"
+    }
+  ],
+  "transacciones_no_exitosas": [
+    {
+      "_id": "tx_demo_1",
+      "fecha_intento": "2026-10-23T08:00:00-06:00",
+      "cliente_empresa_id": "1",
+      "cliente_nombre": "Restaurante de ejemplo",
+      "proveedor_empresa_id": "2",
+      "proveedor_nombre": "Proveedor de ejemplo",
+      "motivo": "Sin existencias",
+      "monto_tentativo": "125.50"
+    }
+  ],
+  "sustituciones_ofrecidas": [
+    {
+      "_id": "su_demo_1",
+      "transaccion_id": "tx_demo_1",
+      "producto_solicitado": "Arroz A",
+      "producto_alternativo_ofrecido": "Arroz B"
+    }
+  ],
+  "incidencias_entregas": [
+    {
+      "_id": "in_demo_1",
+      "pedido_id_sql": 1,
+      "cliente_empresa_id": "1",
+      "cliente_nombre": "Restaurante de ejemplo",
+      "proveedor_empresa_id": "2",
+      "proveedor_nombre": "Proveedor de ejemplo",
+      "tipo_incidencia": "Entrega incompleta",
+      "tipo_reclamo": "Reposici?n",
+      "estado": "Pendiente",
+      "fecha": "2026-10-23T08:00:00-06:00"
+    }
+  ],
+  "evidencias_incidencia": [
+    {
+      "_id": "ei_demo_1",
+      "incidencia_id": "in_demo_1",
+      "nombre_archivo": "evidencia.jpg",
+      "url": "https://example.com/evidencia.jpg"
+    }
+  ],
+  "comentarios_post_compra": [
+    {
+      "_id": "co_demo_1",
+      "pedido_id_sql": 1,
+      "cliente_empresa_id": "1",
+      "cliente_nombre": "Restaurante de ejemplo",
+      "proveedor_empresa_id": "2",
+      "proveedor_nombre": "Proveedor de ejemplo",
+      "opinion_libre": "Buena atenci?n",
+      "calificacion": 5,
+      "fecha": "2026-10-23T08:00:00-06:00"
+    }
+  ],
+  "interacciones_comentario": [
+    {
+      "_id": "ic_demo_1",
+      "comentario_id": "co_demo_1",
+      "fecha": "2026-10-23T08:00:00-06:00",
+      "tipo": "Respuesta",
+      "mensaje": "Gracias",
+      "usuario_id": "2"
+    }
+  ],
+  "necesidades_no_satisfechas": [
+    {
+      "_id": "ne_demo_1",
+      "cliente_empresa_id": "1",
+      "cliente_nombre": "Restaurante de ejemplo",
+      "insumo_buscado": "Arroz",
+      "cantidades_requeridas": 10,
+      "unidad": "kg",
+      "categoria_id_sql": 1,
+      "estado": "Pendiente",
+      "fecha": "2026-10-23T08:00:00-06:00"
+    }
+  ]
+}

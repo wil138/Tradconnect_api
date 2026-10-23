@@ -203,7 +203,7 @@ class AuthViewSet(viewsets.ViewSet):
         })
 
     @swagger_auto_schema(
-        operation_description="Volcado completo de datos (tipo NoSQL) incluyendo catálogos",
+        operation_description="Volcado del usuario con catálogos. fuente_pedidos permite elegir sql (por defecto) o mongo.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['username', 'password'],
@@ -217,6 +217,9 @@ class AuthViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['post'])
     def dump_all_data(self, request):
+        fuente_pedidos = request.data.get('fuente_pedidos', 'sql')
+        if fuente_pedidos not in ('sql', 'mongo'):
+            return Response({'error': 'fuente_pedidos debe ser sql o mongo'}, status=400)
         username = request.data.get('username', '').strip()
         password = request.data.get('password', '')
         if not username or not password:
@@ -252,8 +255,12 @@ class AuthViewSet(viewsets.ViewSet):
         if empresa:
             dump['sucursales'] = serialize_qs(Sucursal.objects.filter(empresaid=empresa), SucursalSerializer)
             dump['productos'] = serialize_qs(Producto.objects.filter(empresaid=empresa, eliminado=False), ProductoSerializer)
-            dump['pedidos_comprador'] = serialize_qs(Pedido.objects.filter(restauranteid=empresa).order_by('-fechapedido'), PedidoSerializer)
-            dump['pedidos_proveedor'] = serialize_qs(Pedido.objects.filter(proveedorid=empresa).order_by('-fechapedido'), PedidoSerializer)
+            if fuente_pedidos == 'mongo':
+                from Tradconnect_no_sql.order_views import dump_order_lists
+                dump.update(dump_order_lists(empresa.pk))
+            else:
+                dump['pedidos_comprador'] = serialize_qs(Pedido.objects.filter(restauranteid=empresa).order_by('-fechapedido'), PedidoSerializer)
+                dump['pedidos_proveedor'] = serialize_qs(Pedido.objects.filter(proveedorid=empresa).order_by('-fechapedido'), PedidoSerializer)
             dump['inventario'] = serialize_qs(Inventariobodega.objects.filter(sucursalid__empresaid=empresa), InventarioBodegaSerializer)
             dump['promociones'] = serialize_qs(Promocion.objects.filter(productoid__empresaid=empresa), PromocionSerializer)
             total_comprado = Pedido.objects.filter(restauranteid=empresa).aggregate(total=Sum('totalneto'))['total'] or 0
@@ -530,6 +537,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
                         inventario.ultimaactualizacion = timezone.now()
                         inventario.save()
                     else:
+                        transaction.set_rollback(True)
                         return Response({'error': f'Stock insuficiente para {detalle.productoid.nombreproducto}'}, status=400)
         return Response({'success': True, 'nuevo_estado': nuevo_estado.estadonombre})
 
