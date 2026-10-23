@@ -1,3 +1,4 @@
+"""Compatibilidad con instalaciones SQL antiguas. La API HTTP actual usa sql_models.py, hybrid_views.py e identities.py; ver urls.py."""
 # views.py - TradConnect con Swagger, sin catálogos expuestos, sin Factura
 
 from rest_framework import viewsets, status
@@ -73,22 +74,25 @@ class AuthViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         v_data = serializer.validated_data
         rol_nombre = 'Restaurante' if v_data['rol'] == 'restaurant' else 'Proveedor'
-        rol_obj = Rol.objects.get(nombrerol=rol_nombre)
-        usuario = Usuario.objects.create(
-            rolid=rol_obj,
-            nombreusuario=v_data['nombre_usuario'],
-            correoelectronico=v_data['correo'],
-            contrasena=make_password(v_data['contrasena']),
-            fecharegistro=timezone.now()
-        )
-        empresa = Empresa.objects.create(
-            usuarioid=usuario, rolid=rol_obj,
-            razonsocial=v_data['razon_social'], ruc=v_data['ruc'],
-            telefono=v_data['telefono'], correoempresa=v_data['correo'],
-            direccionfiscal=v_data.get('direccion_fiscal', ''),
-            estado=True, logourl=v_data.get('logo_url', '')
-        )
-        refresh = RefreshToken.for_user(usuario)
+        rol_obj = Rol.objects.filter(nombrerol__iexact=rol_nombre).first()
+        if rol_obj is None:
+            return Response({'error': 'El rol solicitado no está configurado. Contacta al administrador.'}, status=503)
+        with transaction.atomic():
+            usuario = Usuario.objects.create(
+                rolid=rol_obj,
+                nombreusuario=v_data['nombre_usuario'],
+                correoelectronico=v_data['correo'],
+                contrasena=make_password(v_data['contrasena']),
+                fecharegistro=timezone.now()
+            )
+            empresa = Empresa.objects.create(
+                usuarioid=usuario, rolid=rol_obj,
+                razonsocial=v_data['razon_social'], ruc=v_data['ruc'],
+                telefono=v_data['telefono'], correoempresa=v_data['correo'],
+                direccionfiscal=v_data.get('direccion_fiscal', ''),
+                estado=True, logourl=v_data.get('logo_url', '')
+            )
+            refresh = RefreshToken.for_user(usuario)
         return Response({
             'refresh': str(refresh), 'access': str(refresh.access_token),
             'usuario': UsuarioSerializer(usuario).data,
@@ -172,38 +176,13 @@ class AuthViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'], authentication_classes=DEFAULT_AUTH, permission_classes=[IsUsuarioAutenticado])
     def my_data(self, request):
-        usuario = request.user
-        empresa = Empresa.objects.filter(usuarioid=usuario).first()
-        if not empresa:
-            return Response({'error': 'Usuario sin empresa'}, status=400)
-        sucursales = SucursalSerializer(Sucursal.objects.filter(empresaid=empresa), many=True).data
-        productos = ProductoSerializer(Producto.objects.filter(empresaid=empresa, eliminado=False), many=True).data
-        pedidos_comprador = PedidoSerializer(Pedido.objects.filter(restauranteid=empresa).order_by('-fechapedido')[:20], many=True).data
-        pedidos_proveedor = PedidoSerializer(Pedido.objects.filter(proveedorid=empresa).order_by('-fechapedido')[:20], many=True).data
-        inventario = InventarioBodegaSerializer(Inventariobodega.objects.filter(sucursalid__empresaid=empresa), many=True).data
-        promociones = PromocionSerializer(Promocion.objects.filter(productoid__empresaid=empresa), many=True).data
-        documentos = DocumentoSucursalSerializer(Documentosucursal.objects.filter(sucursalid__empresaid=empresa), many=True).data
-        stats = {
-            'total_productos': len(productos),
-            'total_sucursales': len(sucursales),
-            'total_pedidos_comprador': len(pedidos_comprador),
-            'total_pedidos_proveedor': len(pedidos_proveedor),
-        }
-        return Response({
-            'usuario': UsuarioSerializer(usuario).data,
-            'empresa': EmpresaSerializer(empresa).data,
-            'sucursales': sucursales,
-            'productos': productos,
-            'pedidos_comprador': pedidos_comprador,
-            'pedidos_proveedor': pedidos_proveedor,
-            'inventario': inventario,
-            'promociones': promociones,
-            'documentos': documentos,
-            'estadisticas': stats
-        })
+        source = request.query_params.get('fuente_pedidos', 'sql')
+        if source not in ('sql', 'mongo'):
+            return Response({'error': 'fuente_pedidos debe ser sql o mongo'}, status=400)
+        return self.build_snapshot(request.user, source)
 
     @swagger_auto_schema(
-        operation_description="Volcado completo de datos (tipo NoSQL) incluyendo catálogos",
+        operation_description="Volcado del usuario con catálogos. fuente_pedidos permite elegir sql (por defecto) o mongo.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['username', 'password'],
@@ -217,6 +196,9 @@ class AuthViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['post'])
     def dump_all_data(self, request):
+        fuente_pedidos = request.data.get('fuente_pedidos', 'sql')
+        if fuente_pedidos not in ('sql', 'mongo'):
+            return Response({'error': 'fuente_pedidos debe ser sql o mongo'}, status=400)
         username = request.data.get('username', '').strip()
         password = request.data.get('password', '')
         if not username or not password:
@@ -228,14 +210,17 @@ class AuthViewSet(viewsets.ViewSet):
         if not valida:
             return Response({'error': 'Contraseña incorrecta'}, status=401)
 
-        empresa = Empresa.objects.filter(usuarioid=usuario).first()
+        response = self.build_snapshot(usuario, fuente_pedidos)
         refresh = RefreshToken.for_user(usuario)
+        response.data['tokens'] = {'access': str(refresh.access_token), 'refresh': str(refresh)}
+        return response
 
+    def build_snapshot(self, usuario, fuente_pedidos='sql'):
+        empresa = Empresa.objects.filter(usuarioid=usuario).first()
         def serialize_qs(qs, serializer_class):
             return serializer_class(qs, many=True).data
 
         dump = {
-            'tokens': {'access': str(refresh.access_token), 'refresh': str(refresh)},
             'usuario': UsuarioSerializer(usuario).data,
             'empresa': EmpresaSerializer(empresa).data if empresa else None,
             'catalogos': {
@@ -252,8 +237,12 @@ class AuthViewSet(viewsets.ViewSet):
         if empresa:
             dump['sucursales'] = serialize_qs(Sucursal.objects.filter(empresaid=empresa), SucursalSerializer)
             dump['productos'] = serialize_qs(Producto.objects.filter(empresaid=empresa, eliminado=False), ProductoSerializer)
-            dump['pedidos_comprador'] = serialize_qs(Pedido.objects.filter(restauranteid=empresa).order_by('-fechapedido'), PedidoSerializer)
-            dump['pedidos_proveedor'] = serialize_qs(Pedido.objects.filter(proveedorid=empresa).order_by('-fechapedido'), PedidoSerializer)
+            if fuente_pedidos == 'mongo':
+                from Tradconnect_no_sql.order_views import dump_order_lists
+                dump.update(dump_order_lists(empresa.pk))
+            else:
+                dump['pedidos_comprador'] = serialize_qs(Pedido.objects.filter(restauranteid=empresa).order_by('-fechapedido'), PedidoSerializer)
+                dump['pedidos_proveedor'] = serialize_qs(Pedido.objects.filter(proveedorid=empresa).order_by('-fechapedido'), PedidoSerializer)
             dump['inventario'] = serialize_qs(Inventariobodega.objects.filter(sucursalid__empresaid=empresa), InventarioBodegaSerializer)
             dump['promociones'] = serialize_qs(Promocion.objects.filter(productoid__empresaid=empresa), PromocionSerializer)
             total_comprado = Pedido.objects.filter(restauranteid=empresa).aggregate(total=Sum('totalneto'))['total'] or 0
@@ -530,6 +519,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
                         inventario.ultimaactualizacion = timezone.now()
                         inventario.save()
                     else:
+                        transaction.set_rollback(True)
                         return Response({'error': f'Stock insuficiente para {detalle.productoid.nombreproducto}'}, status=400)
         return Response({'success': True, 'nuevo_estado': nuevo_estado.estadonombre})
 

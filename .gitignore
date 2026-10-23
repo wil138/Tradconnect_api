@@ -32,3 +32,15 @@ Thumbs.db
 
 # PyCharm
 .idea/
+
+# Exportaciones privadas y configuracion local
+exportaciones*/
+datos_limpios*.jsonl
+configurar-entorno.ps1
+
+respaldos/
+
+.django-secret-key
+**/.django-secret-key
+
+**/conexiones.local.json
