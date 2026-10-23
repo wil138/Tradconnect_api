@@ -1,3 +1,4 @@
+"""Compatibilidad con instalaciones SQL antiguas. La API HTTP actual usa sql_models.py, hybrid_views.py e identities.py; ver urls.py."""
 # python manage.py inspectdb > /models.py                     
 # This is an auto-generated Django model module.
 # You'll have to do the following manually to clean this up:

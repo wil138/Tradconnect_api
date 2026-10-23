@@ -1,3 +1,4 @@
+"""Compatibilidad con instalaciones SQL antiguas. La API HTTP actual usa sql_models.py, hybrid_views.py e identities.py; ver urls.py."""
 # serializers.py - TradConnect (sin catálogos expuestos, sin Factura)
 from django.db import models
 from rest_framework import serializers
@@ -71,18 +72,28 @@ class EmpresaSerializer(serializers.ModelSerializer):
 
 class EmpresaRegistroSerializer(serializers.Serializer):
     nombre_usuario = serializers.CharField(max_length=100)
-    correo = serializers.EmailField()
-    contrasena = serializers.CharField(write_only=True)
+    correo = serializers.EmailField(max_length=150)
+    contrasena = serializers.CharField(write_only=True, min_length=8, max_length=128, trim_whitespace=False)
     rol = serializers.ChoiceField(choices=[('restaurant', 'Restaurante'), ('provider', 'Proveedor')])
-    razon_social = serializers.CharField(max_length=200)
+    razon_social = serializers.CharField(max_length=150)
     ruc = serializers.CharField(max_length=50)
     telefono = serializers.CharField(max_length=50)
-    direccion_fiscal = serializers.CharField(required=False, allow_blank=True)
+    direccion_fiscal = serializers.CharField(max_length=250, required=False, allow_blank=True)
     logo_url = serializers.URLField(required=False, allow_blank=True, allow_null=True)
 
     def validate_correo(self, value):
-        if Usuario.objects.filter(correoelectronico=value).exists():
+        if Usuario.objects.filter(correoelectronico__iexact=value).exists():
             raise serializers.ValidationError("Este correo ya está registrado.")
+        return value
+
+    def validate_nombre_usuario(self, value):
+        if Usuario.objects.filter(nombreusuario__iexact=value).exists():
+            raise serializers.ValidationError("Este usuario ya está registrado.")
+        return value
+
+    def validate_ruc(self, value):
+        if Empresa.objects.filter(ruc__iexact=value).exists():
+            raise serializers.ValidationError("Este RUC ya está registrado.")
         return value
 
 # =========================================================

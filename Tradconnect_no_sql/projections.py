@@ -20,7 +20,7 @@ class DocumentModel:
 
     @property
     def collection(self):
-        return get_database()[self.sql_model._meta.model_name]
+        return get_database()[self.sql_model._meta.model_name.removeprefix('sql')]
 
     def serialize(self, instance):
         return {'_id': instance.pk, **{
@@ -30,7 +30,8 @@ class DocumentModel:
 
 
 def get_document_models():
-    # No copiar contraseñas ni hashes a la base documental.
-    return {model._meta.model_name: DocumentModel(model)
-            for model in apps.get_app_config('TradConnect').get_models()
-            if model._meta.model_name != 'usuario'}
+    from TradConnect import sql_models
+    from django.db.models import Model
+    return {model._meta.model_name.removeprefix('sql'): DocumentModel(model)
+            for model in vars(sql_models).values()
+            if isinstance(model,type) and issubclass(model,Model) and model is not Model}

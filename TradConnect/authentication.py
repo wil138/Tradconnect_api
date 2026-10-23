@@ -25,16 +25,13 @@ class UsuarioJWTAuthentication(BaseAuthentication):
         try:
             token = AccessToken(token_str)
             user_id = token['user_id']
+            if token.get('identity_source') != 'mongo' or type(token.get('auth_version')) is not int:
+                raise AuthenticationFailed('Inicia sesion de nuevo con la API actualizada.')
         except Exception as e:
             raise AuthenticationFailed(f'Token inválido: {e}')
 
-        # Importación local para evitar circular import al arrancar Django
-        from TradConnect.models import Usuario
-        try:
-            usuario = Usuario.objects.get(id=user_id)
-        except Usuario.DoesNotExist:
-            raise AuthenticationFailed('Usuario no encontrado')
-
+        from .identities import resolve
+        usuario = resolve(user_id, token.get('company_id'), token.get('auth_version', 0))
         return (usuario, token)
 
     def authenticate_header(self, request):

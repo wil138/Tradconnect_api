@@ -9,11 +9,15 @@ class TipoEmpresa(str, Enum):
     RESTAURANTE = 'Restaurante'
     PROVEEDOR = 'Proveedor'
     INTERNA = 'Interna'
+    INTERNO = 'Interno'
 
 class NombreRol(str, Enum):
     CLIENTE = 'Cliente'
     PROVEEDOR = 'Proveedor'
     ADMINISTRADOR = 'Administrador'
+    ADMIN = 'Admin'
+    ANALISTA = 'Analista'
+    GERENCIA = 'Gerencia'
 
 class EstadoIncidencia(str, Enum):
     PENDIENTE = 'Pendiente'
@@ -120,6 +124,8 @@ class SustitucionOfrecidaCreate(DocumentCreate):
     producto_alternativo_ofrecido: str
 
 class IncidenciaEntregaCreate(DocumentCreate):
+    respuesta_proveedor: str | None = None
+    fecha_respuesta: datetime | None = None
     pedido_id_sql: int
     cliente_empresa_id: str
     cliente_nombre: str

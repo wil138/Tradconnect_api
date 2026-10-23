@@ -69,3 +69,8 @@ class ItemView(DocumentView):
                         raise ValidationError('El documento tiene referencias; elimina primero sus dependientes.')
         database[collection].delete_one({'_id': pk})
         return Response(status=204)
+
+
+class SchemaView(DocumentView):
+    def get(self, request):
+        return Response({name: schema.model_json_schema() for name, (schema, _) in SCHEMAS.items()})

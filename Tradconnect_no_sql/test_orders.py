@@ -95,9 +95,8 @@ class OrderSyncTests(SimpleTestCase):
         self.assertIn('sincronizado_en', args.args[1])
 
     @patch('Tradconnect_no_sql.order_views.get_database')
-    @patch('Tradconnect_no_sql.order_views.Empresa.objects.filter')
+    @patch('Tradconnect_no_sql.order_views.MyOrdersView.company_ids',return_value=[2,3])
     def test_read_is_scoped_to_authenticated_companies(self, companies, database):
-        companies.return_value.values_list.return_value = [2, 3]
         database.return_value.__getitem__.return_value.find_one.return_value = None
         user = SimpleNamespace(is_authenticated=True)
         request = APIRequestFactory().get('/api/nosql/mis-pedidos/99/')
@@ -107,7 +106,7 @@ class OrderSyncTests(SimpleTestCase):
         query = database.return_value['pedidos_web'].find_one.call_args.args[0]
         self.assertEqual(query, {'$and': [{'$or': [{'restauranteid': {'$in': [2, 3]}},
                                                                {'proveedorid': {'$in': [2, 3]}}]}, {'_id': 99}]})
-        companies.assert_called_once_with(usuarioid=user)
+        companies.assert_called_once()
 
     def test_anonymous_cannot_read_orders(self):
         response = MyOrdersView.as_view()(APIRequestFactory().get('/api/nosql/mis-pedidos/'))

@@ -5,7 +5,7 @@ from django.core.exceptions import ImproperlyConfigured
 from pymongo.errors import PyMongoError
 
 from config.mongodb import get_database
-from TradConnect.models import Empresa
+from TradConnect.identities import users
 from .views import DocumentView, MongoUnavailable
 
 
@@ -25,7 +25,7 @@ class MyOrdersView(DocumentView):
     permission_classes = [IsAuthenticated]
 
     def company_ids(self, request):
-        return list(Empresa.objects.filter(usuarioid=request.user).values_list('pk', flat=True))
+        return list({doc['empresa_id'] for doc in users().find({'usuario_id':request.user.pk,'estado_usuario':True,'estado_rol':True},{'empresa_id':1}) if doc.get('empresa_id')})
 
     def scope(self, request):
         ids = self.company_ids(request)

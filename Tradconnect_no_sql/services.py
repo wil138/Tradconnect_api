@@ -5,18 +5,18 @@ from pydantic import ValidationError as SchemaError
 from rest_framework.exceptions import NotFound, ValidationError
 
 from config.mongodb import get_database
-from TradConnect import models as sql
+from TradConnect import sql_models as sql
 from .models import SCHEMAS
 
 
 SQL_REFERENCES = {
-    'sucursal_id_sql': sql.Sucursal,
-    'cliente_sucursal_id_sql': sql.Sucursal,
-    'proveedor_sucursal_id_sql': sql.Sucursal,
-    'categoria_id_sql': sql.Categoria,
-    'producto_id_sql': sql.Producto,
-    'metodo_pago_id_sql': sql.Metodopago,
-    'pedido_id_sql': sql.Pedido,
+    'sucursal_id_sql': sql.SqlSucursal,
+    'cliente_sucursal_id_sql': sql.SqlSucursal,
+    'proveedor_sucursal_id_sql': sql.SqlSucursal,
+    'categoria_id_sql': sql.SqlCategoria,
+    'producto_id_sql': sql.SqlProducto,
+    'metodo_pago_id_sql': sql.SqlMetodopago,
+    'pedido_id_sql': sql.SqlPedido,
 }
 MONGO_REFERENCES = {
     'preferencia_id': 'preferencias_negocio',

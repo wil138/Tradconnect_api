@@ -1,299 +1,444 @@
-## API de TradConnect
+# TradConnect API
 
-Esta API está diseñada para gestionar compra y venta de productos. Desarrollada con Django y Django REST Framework, incluye autenticación JWT, documentación Swagger, y conexión a SQL Server.
+> **Servidor Django de este proyecto:** `python manage.py runserver 127.0.0.1:8001`.
+> Swagger: http://localhost:8001/swagger/ · Conexiones: http://localhost:8001/conexiones/.
+> Se mantiene `config/urls.py` como entrada central. La configuración privada local
+> se carga automáticamente; las variables de entorno tienen prioridad.
 
-## Tecnologías utilizadas
 
-- Python 3.13+
-- Django  
-- Django REST Framework  
-- SQL Server  
-- JWT (Json Web Token)  
-- Swagger (drf-yasg)  
-- Apidog / Postman (para pruebas)
+Documentación de la API activa en `TradConnect_Api`. El servicio usa Django REST
+Framework y combina identidades/sesiones documentales en MongoDB con los datos
+transaccionales y catálogos existentes en SQL Server.
 
-## Instalación
+## Documentación interactiva
 
-Clona el repositorio:
-```bash
-https://github.com/wil138/TradConnect/
-cd TradConnect
+Con el servidor iniciado:
+
+- `http://127.0.0.1:8000/` redirige a Swagger.
+- `http://127.0.0.1:8000/swagger/` muestra Swagger UI.
+- `http://127.0.0.1:8000/redoc/` muestra ReDoc.
+- `http://127.0.0.1:8000/swagger.json/` y `/swagger.yaml/` exponen el esquema OpenAPI.
+
+Las rutas de negocio SQL comienzan con `/api/`; las rutas documentales y de
+analítica comienzan con `/api/nosql/`.
+
+## Arquitectura y datos
+
+- **MongoDB** almacena las identidades de inicio de sesión y las 13 colecciones
+  documentales. El registro web crea el usuario/empresa en
+  `usuarios_empresas_roles`.
+- **SQL Server** contiene los catálogos y las entidades de negocio operativas
+  (productos, sucursales, inventario, pedidos, etc.). Se accede a las tablas
+  existentes mediante `TradConnect/sql_models.py`; esos modelos no crean ni
+  migran las tablas de negocio.
+- El JWT identifica al usuario MongoDB y lleva el ámbito de empresa y la versión
+  de autenticación. La API comprueba el rol y limita los recursos SQL a la
+  empresa correspondiente.
+- No hay transacción distribuida entre MongoDB y SQL Server. La cotización de
+  pedidos y las escrituras de colecciones tienen validaciones propias, pero no
+  equivalen a una transacción común entre las dos bases.
+
+## Instalación y configuración
+
+Desde la carpeta `TradConnect_Api`:
+
+```powershell
+python -m pip install -r requirements.txt
+
+# Ajusta los valores al servidor SQL Server local.
+$env:SQLSERVER_HOST = 'SERVIDOR\INSTANCIA'
+$env:SQLSERVER_DATABASE = 'TradConnect'
+# Opcional: autenticación SQL en vez de la cuenta Windows del proceso.
+$env:SQLSERVER_USER = 'usuario'
+$env:SQLSERVER_PASSWORD = 'contraseña'
+
+# MongoDB es necesario para autenticación, colecciones y analítica de feedback.
+$env:MONGODB_URI = 'mongodb://localhost:27017'
+$env:MONGODB_DATABASE = 'tradconnect'
+
+python manage.py check
+python manage.py runserver
 ```
-# Instala dependencias:
-```python
-- pip install -r requirements.txt
+
+`SQLSERVER_HOST` y `SQLSERVER_DATABASE` también tienen valores por defecto en
+`config/settings.py`; configura explícitamente los valores del entorno. Si no se
+define `SQLSERVER_USER`, el backend intenta usar la cuenta Windows del proceso.
+El driver ODBC predeterminado es `ODBC Driver 17 for SQL Server`; se puede cambiar
+con `SQLSERVER_DRIVER`. `SQLSERVER_PORT` es opcional.
+
+`MONGODB_URI` no tiene valor predeterminado: debe configurarse para usar MongoDB.
+La moneda configurada para el marketplace se fija mediante
+`MARKETPLACE_CURRENCY_ID` (por defecto `1`). No guardes credenciales en archivos
+versionados ni en ejemplos que vayas a publicar.
+
+Las migraciones de Django solo administran tablas internas de Django. No crean
+ni reparan las tablas de negocio SQL marcadas como `managed=False`. Comprueba la
+conexión y el esquema existente antes de ejecutar importaciones o probar CRUD.
+
+## Convenciones HTTP
+
+- Los cuerpos y respuestas de escritura usan JSON.
+- Las rutas protegidas requieren `Authorization: Bearer <access>`.
+- El token de acceso dura 60 minutos y el refresh token un día, según la
+  configuración actual de SimpleJWT.
+- Las colecciones documentales paginadas responden
+  `{"limit": n, "offset": n, "results": [...]}`. `limit` admite de 1 a 500;
+  `offset` debe ser un entero no negativo.
+- Los serializadores SQL y los modelos Pydantic publicados en Swagger son la
+  referencia final para los campos y tipos del esquema instalado.
+
+Ejemplo de inicio de sesión:
+
+```http
+POST /api/auth/login/
+Content-Type: application/json
+
+{"username":"correo@ejemplo.com","password":"contraseña"}
 ```
 
-# Configura la base de datos en settings.py
-Configuración de base de datos (SQL Server)
-un ejemplo para SQL Server usando `pyodbc`:
+La respuesta incluye `tokens.access`, `tokens.refresh`, `usuario`, `empresa`,
+`catalogos`, `sucursales`, `productos`, `inventario`, `promociones`,
+`pedidos_comprador`, `pedidos_proveedor`, `moneda_catalogo_id` y `estadisticas`.
 
-```python
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sql_server.pyodbc',
-        'NAME': 'NombreBD',
-        'USER': 'usuario',
-        'PASSWORD': 'contraseña',
-        'HOST': 'localhost',
-        'PORT': '1433',
-        'OPTIONS': {
-            'driver': 'ODBC Driver 17 for SQL Server',
-            'trusted_connection': 'yes',
-        },
-    }
+## API SQL
+
+Salvo marketplace y catálogos, las rutas requieren JWT. Los listados SQL no
+declaran paginación propia; el alcance depende del recurso y del rol.
+
+### Autenticación y perfil
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `POST` | `/api/auth/register/` | Público | Registra identidad y empresa en MongoDB. |
+| `POST` | `/api/auth/login/` | Público | Inicia sesión y devuelve tokens más el snapshot de la empresa. |
+| `POST` | `/api/auth/refresh/` | Público | Recibe `{"refresh":"..."}` y devuelve un nuevo `access`. |
+| `GET` | `/api/auth/me/` | JWT | Devuelve la identidad autenticada. |
+| `GET` | `/api/auth/my-data/` | JWT | Devuelve el snapshot actualizado de la empresa; conserva el token existente. |
+| `POST` | `/api/auth/dump-all/` | Credenciales | Alias de compatibilidad de `login`; acepta el mismo cuerpo y respuesta. |
+| `PUT` | `/api/auth/update-profile/` | JWT | Actualiza `nombreusuario`, `correoelectronico` y/o `telefono`. |
+| `POST` | `/api/auth/change-password/` | JWT | Recibe `old_password` y `new_password`; rota la versión de autenticación y devuelve tokens. |
+
+Registro: `nombre_usuario`, `correo`, `contrasena` (8–128 caracteres), `rol`
+(`restaurant` o `provider`), `razon_social`, `ruc` y `telefono` son obligatorios.
+`direccion_fiscal` y `logo_url` son opcionales. La respuesta de registro es
+`{"usuario": ...}`; después hay que iniciar sesión para obtener tokens.
+
+La actualización de perfil solo acepta los tres campos indicados y rechaza
+campos adicionales. El cambio de contraseña valida la contraseña actual y aplica
+los validadores de Django.
+
+### Recursos SQL
+
+`CRUD` indica listado/detalle y las operaciones de escritura disponibles. Para
+los cuerpos completos, consulta el esquema OpenAPI, ya que varios serializadores
+se generan directamente desde el modelo SQL instalado.
+
+| Recurso | Rutas | Métodos | Acceso y alcance |
+|---|---|---|---|
+| Empresas | `/api/empresas/`, `/api/empresas/{id}/`, `/api/empresas/{id}/sucursales/` | `GET`; `PATCH` y `PUT` en detalle; sucursales `GET` | Solo la empresa del usuario. No hay alta/baja de empresa en este recurso. |
+| Sucursales | `/api/sucursales/`, `/api/sucursales/{id}/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | JWT; se asigna la empresa desde el JWT. `DELETE` marca la sucursal inactiva. |
+| Productos | `/api/productos/`, `/api/productos/{id}/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Proveedores; limitado a sus productos. `DELETE` marca el producto eliminado. |
+| Marketplace | `/api/marketplace/`, `/api/marketplace/{id}/` | `GET` | Público; solo productos activos con stock en sucursales activas. |
+| Inventario | `/api/inventario/`, `/api/inventario/{id}/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Proveedores; producto y sucursal deben pertenecer a su empresa. |
+| Promociones | `/api/promociones/`, `/api/promociones/{id}/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | Proveedores; el producto debe ser propio y el descuento estar entre 0 y 100. |
+| Pedidos | `/api/pedidos/`, `/api/pedidos/{id}/` | `GET`, `POST` | Compradores y proveedores relacionados al pedido. |
+| Cotización | `/api/pedidos/cotizar/` | `POST` | Compradores; valida precio, promociones, moneda, sucursales y stock. |
+| Estado de pedido | `/api/pedidos/{id}/update_status/` | `PUT` | Proveedor propietario del pedido; recibe `estado_id` y, opcionalmente, `comentario`. |
+| Detalles de pedido | `/api/detalles-pedido/`, `/api/detalles-pedido/{id}/` | `GET` | Solo pedidos relacionados con la empresa autenticada. |
+| Documentos de sucursal | `/api/documentos-sucursal/`, `/api/documentos-sucursal/{id}/` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | JWT; la sucursal debe pertenecer a la empresa. |
+| Dashboard | `/api/dashboard/summary/`, `/api/dashboard/sales_chart/`, `/api/dashboard/recent_orders/` | `GET` | Proveedores; estadísticas, series de venta y hasta cinco pedidos recientes. |
+
+El marketplace acepta los filtros opcionales `categoria`, `proveedor` y
+`search`, por ejemplo:
+
+```text
+GET /api/marketplace/?categoria=2&proveedor=10&search=arroz
+```
+
+El serializador de producto expone datos del producto, `categoria_nombre`,
+`unidad_nombre`, `inventario`, `promociones`, `precio_original`, `precio_final`,
+`descuento`, `promocion_activa` y `sucursal_origen_id`. Para crear un producto se
+envían los campos SQL editables (`nombreproducto`, `descripcion`, `precioventa`,
+`categoriaid`, `unidadmedidaid`, etc.). `cantidadminimapedido` tiene valor por
+defecto `1`. Al crear, `stock_inicial` junto con `sucursal_id` registra stock
+inicial en una sucursal activa propia. Al actualizar, `stock_disponible` junto
+con `sucursal_id` ajusta el stock de esa sucursal.
+
+Inventario acepta los campos del modelo, incluidos `productoid`, `sucursalid`,
+`stockdisponible` y `stockminimo`; el stock no puede ser negativo y solo puede
+haber un registro por producto y sucursal.
+
+### Cotizar y crear pedidos
+
+Cotizar y crear usan el mismo cuerpo. La compra debe confirmarse con el
+`quote_token` devuelto por la cotización:
+
+```json
+{
+  "proveedor_id": "ID_EMPRESA",
+  "sucursal_origen_id": 4,
+  "sucursal_entrega_id": 8,
+  "metodo_pago_id": 2,
+  "moneda_id": 1,
+  "items": [
+    {"producto_id": 17, "cantidad": 2.5}
+  ],
+  "comentario": "Entrega en horario de mañana"
 }
 ```
 
-## Preparar conexión a MongoDB
+`GET` no aplica: primero usa `POST /api/pedidos/cotizar/`. La respuesta de
+cotización contiene `subtotal`, `ahorro`, `impuesto`, `totalneto`, `moneda_id`,
+`detalles` y `quote_token`. Después envía el mismo cuerpo más
+`quote_token` a `POST /api/pedidos/`. El token firmado vence a los cinco minutos;
+si cambian el precio, la promoción o el stock, hay que volver a cotizar.
+Se aceptan de 1 a 100 productos, cantidades positivas con hasta dos decimales,
+una moneda igual a `MARKETPLACE_CURRENCY_ID`, sucursales activas correctas y
+stock suficiente. Los precios y descuentos se calculan en el servidor; no se
+aceptan precios aportados por el cliente.
 
-### Colecciones NoSQL del negocio
+### Catálogos públicos de solo lectura
 
-Los esquemas Pydantic Create/Read están en `Tradconnect_no_sql/models.py`.
-Se conservan las 13 colecciones del modelo documental: usuarios, empresas y roles;
-preferencias de negocio, categorías, productos y métodos de pago; evaluaciones;
-transacciones no exitosas y sustituciones; incidencias y evidencias; comentarios e
-interacciones; y necesidades no satisfechas.
+| Ruta | Recurso |
+|---|---|
+| `/api/categorias/` | Categorías |
+| `/api/unidades-medida/` | Unidades de medida |
+| `/api/monedas/` | Monedas |
+| `/api/metodos-pago/` | Métodos de pago |
+| `/api/estados-pedido/` | Estados de pedido |
+| `/api/departamentos/` | Departamentos |
+| `/api/municipios/` | Municipios |
+| `/api/tipos-documento/` | Tipos de documento |
 
-Las rutas SQL y el login JWT existentes siguen bajo `/api/`. No se cambia la
-fuente de autenticación: guardar un usuario en MongoDB no crea un usuario SQL.
-Las nuevas rutas documentales requieren JWT de un usuario SQL con rol `Admin`
-o `Administrador`, porque gestionan información de varias empresas. Esta versión
-no habilita acceso directo para clientes/proveedores; requiere definir sus permisos
-por empresa antes de abrir esas rutas.
+Cada ruta admite `GET` de colección y `GET /{id}/`. No admite escrituras.
 
-```text
-GET, POST                 /api/nosql/preferencias_negocio/
-GET, PUT, PATCH, DELETE    /api/nosql/preferencias_negocio/<id>/
-GET, POST                 /api/nosql/usuarios_empresas_roles/
-```
+## API MongoDB
 
-El mismo patrón funciona con el nombre de cualquiera de las 13 colecciones.
-POST genera `_id` automáticamente (`uer_<uuid>` para usuarios). PUT reemplaza el
-contenido; PATCH valida el documento completo tras combinar cambios. Las listas
-admiten `limit=100&offset=0`, máximo 500, y devuelven `results`, `limit`, `offset`.
-Las respuestas nunca incluyen `password_hash`. Las escrituras de usuario exigen
-un hash reconocido por Django; no envíes contraseñas en texto plano.
+### Colecciones documentales: administración
 
-Las referencias `*_id_sql` se comprueban en SQL. Las referencias a preferencias,
-transacciones, incidencias y comentarios se comprueban en MongoDB; no se permite
-borrar un documento que tenga esos dependientes. Los IDs `usuario_id` y
-`empresa_id` son cadenas: la carga SQL usa el ID SQL convertido a texto. No hay
-sincronización automática de estas 13 colecciones ni transacciones distribuidas entre ambas bases;
-las validaciones no sustituyen la consistencia ante escrituras concurrentes.
-Fechas y decimales se almacenan como ISO 8601 y cadenas decimales respectivamente.
+`GET /api/nosql/esquemas/` devuelve los esquemas JSON de las 13 colecciones:
 
-### Carga de datos
+1. `usuarios_empresas_roles`
+2. `preferencias_negocio`
+3. `preferencias_categorias`
+4. `preferencias_productos`
+5. `preferencias_metodos_pago`
+6. `evaluaciones_proveedores`
+7. `transacciones_no_exitosas`
+8. `sustituciones_ofrecidas`
+9. `incidencias_entregas`
+10. `evidencias_incidencia`
+11. `comentarios_post_compra`
+12. `interacciones_comentario`
+13. `necesidades_no_satisfechas`
 
-Configura MongoDB y SQL Server antes de ejecutar:
+Cada colección admite `GET` y `POST` en
+`/api/nosql/{coleccion}/`; cada documento admite `GET`, `PUT`, `PATCH` y
+`DELETE` en `/api/nosql/{coleccion}/{id}/`. Estas operaciones administrativas
+requieren JWT de rol `Admin` o `Administrador`.
+
+- `GET` de colección acepta `limit` y `offset`; responde
+  `{"limit": ..., "offset": ..., "results": [...]}`.
+- `POST` valida el documento completo y genera `_id`; responde `201`.
+- `PUT` reemplaza el documento completo.
+- `PATCH` combina los cambios con el documento y valida el resultado completo.
+- `DELETE` responde `204`; no permite eliminar documentos que tengan referencias
+  documentales conocidas.
+- Las referencias SQL (`*_id_sql`) se validan contra SQL Server. Las referencias
+  entre documentos se validan en MongoDB.
+- `password_hash` nunca se devuelve. Al escribir en
+  `usuarios_empresas_roles`, debe ser un hash reconocido por Django; no se
+  aceptan contraseñas en texto plano.
+
+Campos principales de los esquemas:
+
+| Colección | Campos requeridos o relevantes |
+|---|---|
+| `usuarios_empresas_roles` | `tipo_empresa`, `usuario_id`, `nombre_usuario`, `correo`, `password_hash`, `estado_usuario`, `rol_id`, `nombre_rol`, `estado_rol`, `fecha_asignacion`, `fecha_registro`; datos de empresa/sucursal son opcionales según rol y validador. |
+| `preferencias_negocio` | `empresa_id`, `usuario_id`, `horario_entrega_preferido`, `fecha_actualizacion`. |
+| `preferencias_categorias` | `preferencia_id`, `categoria_id_sql`. |
+| `preferencias_productos` | `preferencia_id`, `producto_id_sql`, `nombre`. |
+| `preferencias_metodos_pago` | `preferencia_id`, `metodo_pago_id_sql`. |
+| `evaluaciones_proveedores` | pedido, cliente y proveedor; `puntuacion`, `calidad`, `tiempo_entrega`, `precio`, `atencion` (1–5) y `fecha`; comentario opcional. |
+| `transacciones_no_exitosas` | fecha de intento, cliente, proveedor, motivo y monto tentativo; pedido opcional. |
+| `sustituciones_ofrecidas` | `transaccion_id`, `producto_solicitado`, `producto_alternativo_ofrecido`. |
+| `incidencias_entregas` | pedido, cliente, proveedor, `tipo_incidencia`, `tipo_reclamo`, estado y fecha; respuesta del proveedor opcional. |
+| `evidencias_incidencia` | `incidencia_id`, `nombre_archivo`, `url`. |
+| `comentarios_post_compra` | pedido, cliente, proveedor, `opinion_libre`, `calificacion` (1–5) y fecha. |
+| `interacciones_comentario` | `comentario_id`, fecha, tipo, mensaje y `usuario_id`. |
+| `necesidades_no_satisfechas` | cliente, `insumo_buscado`, cantidad (>=1), unidad, categoría SQL, estado y fecha. |
+
+Los modelos Pydantic en `Tradconnect_no_sql/models.py` contienen la lista
+completa de campos, tipos, enumeraciones y restricciones. Las solicitudes no
+admiten claves adicionales. Fechas usan ISO 8601 y los importes decimales se
+representan como valores decimales JSON/cadenas según la respuesta serializada.
+
+### Flujos por empresa
+
+Las rutas siguientes derivan la empresa y el rol del JWT; no aceptan que el
+cliente determine libremente la identidad propietaria:
+
+| Método | Ruta | Acceso / comportamiento |
+|---|---|---|
+| `GET` | `/api/nosql/cliente/opciones/` | Restaurante/cliente; devuelve sus pedidos y categorías disponibles para formularios. |
+| `GET`, `POST` | `/api/nosql/mi-empresa/{coleccion}/` | Lee y crea registros del cliente en preferencias, evaluaciones, comentarios, incidencias y necesidades. Un proveedor solo puede consultar evaluaciones, comentarios e incidencias. |
+| `PATCH` | `/api/nosql/mi-empresa/reclamos/{id}/` | Proveedor propietario; requiere `estado` y `respuesta_proveedor`. |
+| `GET` | `/api/nosql/cliente/analitica/` | Analítica de la empresa restaurante autenticada. |
+| `GET` | `/api/nosql/proveedor/analitica/` | Analítica de la empresa proveedora autenticada. |
+| `GET` | `/api/nosql/mis-pedidos/` | Pedidos sincronizados relacionados con las empresas asociadas al usuario. |
+| `GET` | `/api/nosql/mis-pedidos/{id}/` | Consulta un pedido sincronizado dentro del mismo ámbito. |
+
+En `/mi-empresa/{coleccion}/`, las colecciones permitidas son
+`preferencias_negocio`, `evaluaciones_proveedores`, `comentarios_post_compra`,
+`incidencias_entregas` y `necesidades_no_satisfechas`. La API completa datos de
+empresa, usuario, proveedor, pedido, fecha, puntuación promedio o estado según
+el flujo; por eso los cuerpos de cliente solo envían los campos editables.
+Preferencias de negocio se actualizan por empresa/usuario en vez de duplicarse.
+Los listados tienen límite fijo de 50 y aceptan `offset`.
+
+Analítica acepta los parámetros opcionales `start=YYYY-MM-DD`,
+`end=YYYY-MM-DD` y `moneda={id}`. El valor predeterminado es desde
+`2000-01-01` hasta hoy y la primera moneda configurada. Devuelve monedas,
+moneda seleccionada, ventas por mes, estados, cinco productos principales,
+categorías, clientes/proveedores y `feedback`. Si MongoDB no está disponible,
+el bloque de feedback se devuelve con `{"disponible": false}`; SQL sigue siendo
+la fuente de pedidos y ventas.
+
+`/mis-pedidos/` consulta la colección `pedidos_web`, no los pedidos SQL en vivo.
+Usa paginación `limit`/`offset` y orden cronológico descendente.
+
+### Proyecciones históricas de solo lectura
+
+Por compatibilidad, `/api/nosql/{nombre_modelo_sql}/` y
+`/api/nosql/{nombre_modelo_sql}/{id_entero}/` exponen proyecciones de modelos SQL
+en forma documental. Solo admiten `GET`, requieren rol administrador y no
+escriben en MongoDB. Las colecciones con esquema documental explícito de la
+sección anterior tienen prioridad sobre esta ruta heredada.
+
+## Colecciones y carga de datos
+
+El alta normal de usuario crea `usuarios_empresas_roles`. Los flujos web de
+feedback crean preferencias de negocio, evaluaciones, comentarios, incidencias
+y necesidades. Las restantes colecciones documentales se alimentan por el
+panel administrativo, la API de administración o importación JSON; no se
+rellenan automáticamente solo por existir el esquema.
+
+Para importar usuarios desde SQL:
 
 ```powershell
 python manage.py cargar_usuarios_nosql --validar
 python manage.py cargar_usuarios_nosql
-python manage.py cargar_documentos_nosql Tradconnect_no_sql/fixtures/ejemplo.json --validar
-python manage.py cargar_documentos_nosql Tradconnect_no_sql/fixtures/ejemplo.json
 ```
 
-El archivo de ejemplo es una plantilla para desarrollo. Ajusta los IDs SQL de
-categoría, producto, método de pago y pedido a registros existentes, así como los
-IDs de empresas/usuarios y sus nombres. No se ejecuta automáticamente. El JSON
-usa `{ "coleccion": [{ "_id": "identificador-estable", ...campos }] }`.
-El importador valida el archivo completo antes de escribir; `--validar` no escribe.
-Los IDs son obligatorios en archivos para que repetir la carga actualice sin
-duplicar. Los lotes no son atómicos entre colecciones: si falla una escritura,
-repite el archivo para completar la carga. No elimina documentos ausentes del JSON.
-
-La carga de usuarios combina `Usuario`, `Empresa` y `Rol` de SQL, un vínculo por
-usuario/empresa con ID `uer_sql_<usuario>_<empresa>`. Traduce Restaurante a Cliente;
-Proveedor permanece Proveedor; Admin/Administrador a Administrador. Como SQL no
-tiene estado de usuario ni fecha de asignación separados, usa `True` y la fecha
-de registro; el estado del vínculo procede del estado de la empresa. No asocia
-una sucursal arbitraria. Rechaza roles sin equivalencia, empresas incompletas y
-contraseñas sin hash reconocido. Puede completar algunos vínculos antes de fallar;
-es repetible y `--validar` permite detectar errores antes de escribir.
-
-Los catálogos de enumeraciones no venían en el fragmento: los valores provisionales
-están centralizados en `models.py`: TipoEmpresa (Restaurante, Proveedor, Interna),
-NombreRol (Cliente, Proveedor, Administrador), EstadoIncidencia (Pendiente,
-En proceso, Resuelta) y EstadoNecesidad (Pendiente, En proceso, Satisfecha).
-Confírmalos antes de usar datos reales.
-
-La carga genérica anterior `python manage.py cargar_nosql` se conserva como
-compatibilidad para proyecciones SQL de solo lectura (por ejemplo,
-`/api/nosql/producto/`); no carga estas 13 colecciones ni copia usuarios.
-Pruebas: `python manage.py test Tradconnect_no_sql`.
-
-### Auditoría de claves sin escrituras
+Para importar colecciones desde un JSON `{ "coleccion": [{ "_id": "...", ... }] }`:
 
 ```powershell
-python manage.py auditar_bases --limite-ids 0
-# Opcional: mostrar hasta 20 IDs por tipo de diferencia
-python manage.py auditar_bases --limite-ids 20
+python manage.py cargar_documentos_nosql ruta\documentos.json --validar
+python manage.py cargar_documentos_nosql ruta\documentos.json
 ```
 
-Este comando consulta ambas bases reales cuando se ejecuta; no carga ni corrige
-datos. Devuelve JSON con cantidades e IDs faltantes/sobrantes y vínculos distintos
-para `pedido`, `detallepedido`, `historialestadopedido`, `empresa`, `rol` y
-`pedidos_web`. Comprueba también IDs anidados de detalles e historial, duplicados
-y estructuras incompletas de la proyección web. Para `usuarios_empresas_roles`
-reproduce las claves deterministas y traducciones del cargador SQL, incluyendo
-usuarios con varias empresas o sin empresa, y reporta roles sin equivalencia.
-Las empresas/roles SQL sin vínculos de usuario no se equiparan al número de
-documentos: un usuario puede tener varios vínculos.
+El modo `--validar` no escribe. Los documentos de importación requieren `_id`
+de texto estable; repetir una carga reemplaza/upserta esos IDs, pero no elimina
+documentos ausentes. El lote no es atómico entre colecciones: si falla después
+de escribir parte del archivo, corrige el origen y repite la importación.
+`cargar_nosql` es un comando histórico para proyecciones, no sustituye la carga
+de las 13 colecciones.
 
-Todas las consultas seleccionan campos explícitos: IDs, vínculos y nombres de
-roles; no consultan contraseñas, hashes, correos, nombres personales ni importes.
-`--limite-ids 0` omite las muestras de IDs. El código de salida es distinto de cero
-si hay diferencias o si la comparación no pudo completarse. Una colección no
-cargada aparecerá como faltante; el comando no la crea ni la rellena.
+## Errores HTTP
 
-Es una auditoría de claves y relaciones, no de igualdad completa de contenidos:
-no verifica importes, fechas ni valores inferidos como `estado_usuario`. Tampoco
-es una instantánea distribuida: evita escrituras concurrentes para obtener una
-comparación estable. Mantiene mapas de claves en memoria. La comprobación más
-amplia de contenido de pedidos sigue disponible en `sincronizar_pedidos --verificar`.
+| Estado | Significado común |
+|---|---|
+| `400` | JSON, campos, tipos, reglas de negocio o parámetros inválidos. |
+| `401` | Token ausente, inválido, expirado o credenciales incorrectas. |
+| `403` | Rol o ámbito de empresa sin permiso para el recurso. |
+| `404` | Recurso, documento, colección o relación no encontrada. |
+| `503` | Base de datos no disponible, configuración incompleta o esquema incompatible. |
 
-### Funcionamiento de la sincronización de pedidos
+Las respuestas de error DRF suelen usar `detail`; las validaciones de campos
+pueden devolver un objeto por campo o una lista de errores. No se debe asumir que
+todo error tiene una propiedad `error`.
 
-Con `MONGODB_URI` configurada, los cambios ORM en `Pedido`, `Detallepedido` e
-`Historialestadopedido` se sincronizan después del commit SQL. Un rollback
-descarta sus callbacks. Se actualizan `pedido`, `detallepedido`,
-`historialestadopedido` y `pedidos_web`. Esta última proyección contiene el formato
-de `PedidoSerializer`, detalles e `historial`, y se publica completa al final.
-Se eliminan detalles e historial que ya no pertenecen al pedido; eliminar un
-pedido SQL también elimina sus cuatro proyecciones.
+## Integración con la web
 
-Las rutas `/api/pedidos/` siguen usando SQL. La web puede consultar Mongo con el
-JWT actual de cualquier usuario autenticado:
+`javascripts/utils/api.js` es el cliente compartido. `api.request()` añade el
+JWT, intenta refrescarlo ante un `401` y vuelve a probar la solicitud; los
+errores HTTP se devuelven como `{success: false, error}`. Si no hay token, la
+función rechaza la promesa antes de enviar la petición. `api.publicRequest()`
+permite solicitudes públicas y, si falla una petición con caché habilitada,
+puede devolver una copia expirada con `fromCache: true` y `expired: true`; esa
+respuesta no confirma que los datos sigan actualizados en el servidor.
 
-```text
-GET /api/nosql/mis-pedidos/?limit=100&offset=0
-GET /api/nosql/mis-pedidos/123/
+`api.analyticsData()` selecciona la ruta de proveedor solo cuando
+`localStorage.userRole` es `provider`; para los demás valores usa la analítica
+de cliente. Por tanto, admin/staff no debe reutilizar ese helper de analítica de
+cliente: esas rutas exigen que el rol de la sesión coincida con el tipo de
+empresa.
+
+## Conteo de errores desde el frontend
+
+`javascripts/utils/api.js` conserva contadores en memoria para fallos ocurridos
+mediante `api.request()`, `api.publicRequest()` y las solicitudes de refresh:
+
+```js
+api.getErrorStats();
+// { total, byEndpoint, byStatus, lastErrorAt }
+
+api.resetErrorStats();
 ```
 
-Filtran por todas las empresas del usuario como comprador o proveedor. Un pedido
-de otra empresa devuelve 404. No aceptan una empresa del cliente para ampliar
-el acceso. El listado usa `results`, `limit` y `offset`. Mongo inaccesible devuelve
-503; ejecuta la carga inicial antes de usar estas rutas.
+Las rutas se contabilizan sin query string para no retener búsquedas o filtros;
+se guardan cantidades por endpoint y estado (`HTTP_400`, `HTTP_503`,
+`CLIENT_AUTH` o `NETWORK_OR_RESPONSE`), no el mensaje ni el cuerpo de error. El
+conteo existe únicamente durante la vida de la página y no se envía al servidor.
+Las respuestas de catálogo o marketplace servidas desde caché no generan un
+fallo mientras no se haga una solicitud fallida a la API.
 
-`POST /api/auth/dump-all/` conserva `username`, `password`, tokens y datos agrupados.
-Por defecto consulta pedidos SQL. Agrega `"fuente_pedidos": "mongo"` para usar Mongo
-en los pedidos. Se conserva el alcance de la primera empresa del usuario que ya
-tenía ese endpoint. Catálogos y estadísticas siguen en SQL. Los nuevos GET con
-JWT no generan tokens adicionales.
+## Pruebas
+
+Desde `TradConnect_Api`:
 
 ```powershell
-python manage.py sincronizar_pedidos
-python manage.py sincronizar_pedidos --verificar
-python manage.py sincronizar_pedidos --pedido 123
-python manage.py sincronizar_pedidos --limpiar
+python manage.py check
+python manage.py test Tradconnect_no_sql
 ```
 
-`--verificar` no escribe: compara contenido de las cuatro proyecciones por pedido,
-reporta diferencias y devuelve error si las encuentra. En la comprobación completa
-muestra cantidades SQL/Mongo de las tres colecciones fuente. `--limpiar` incluye
-y elimina proyecciones de pedidos ausentes en SQL. Las recargas usan upsert por ID:
-se pueden repetir tras fallos parciales. Verifica sin escrituras concurrentes
-para comparar una foto estable.
+Las pruebas automatizadas no reemplazan la verificación de conexión con una
+instancia SQL Server y MongoDB de desarrollo. Para comprobar el contrato
+completo, usa Swagger y realiza pruebas con datos de prueba en ambas bases.
 
-La sincronización automática se ejecuta dentro del proceso después del commit;
-no es una cola persistente y puede añadir latencia. Si falla, SQL conserva el
-pedido, se registra su ID y se recupera con el comando. Una caída del proceso
-entre commit y sincronización también requiere recarga. SQL directo,
-`QuerySet.update()` y `bulk_create()` no emiten señales: recarga después de usarlos.
-Los nombres y catálogos incrustados se actualizan al sincronizar el pedido.
-Sin URI MongoDB la API SQL sigue funcionando.
 
-MongoDB se configura por separado de `DATABASES`, que sigue usando SQL Server.
-La aplicación obtiene la URI y el nombre de la base desde variables de entorno:
+## Servidor central, URL web y panel de conexiones
+
+El proyecto Django publica todo desde `config/urls.py`. Conserva la portada que
+redirige a Swagger; el panel no reemplaza la documentación existente.
+
+En este equipo el puerto 8000 está ocupado por otra API (rutas `/sql/` y `/mongo/`).
+Esta web está configurada para el Django del proyecto en **8001**:
 
 ```powershell
-$env:MONGODB_URI = "mongodb://localhost:27017"
-$env:MONGODB_DATABASE = "tradconnect"
+python manage.py runserver 127.0.0.1:8001
 ```
 
-Configura `MONGODB_URI` en el entorno de despliegue y no guardes credenciales en el
-código. Cuando la integración use MongoDB, importa `database` desde
-`config.mongodb`; el cliente PyMongo se reutiliza durante el proceso. Esta
-preparación no migra `Usuario`, `Rol` ni `Empresa`, ni modifica sus referencias
-SQL.
+- Swagger: `http://localhost:8001/swagger/`
+- Panel de conexiones: `http://localhost:8001/conexiones/`
+- Configuración pública: `http://localhost:8001/api/configuracion/`
+- Estado SQL/MongoDB: `http://localhost:8001/api/conexiones/`
+- Base de la web: `http://localhost:8001/api`
 
-# Ejecuta migraciones:
-```python
-- python manage.py makemigrations
-- python manage.py migrate
-```
-# Inicia el servidor:
-```python
-- python manage.py runserver
-```
-# Autenticación
-La API utiliza JWT. Para obtener un token:
-```python
-- POST /api/token/ → Enviar usuario y contraseña
-- POST /api/token/refresh/ → Refrescar token
-```
+El panel comprueba SQL con consultas de lectura y MongoDB con ping y la existencia
+de `usuarios_empresas_roles`; muestra el estado de ambas bases y enlaces útiles.
+Devuelve 503 si una base no está lista y no muestra URI, usuarios ni contraseñas.
+La documentación y la configuración pública siguen accesibles si una base falla.
 
-Incluye el token en el encabezado:
-- Authorization: Bearer <tu_token>
+El servidor lee `config/conexiones.local.json` (privado e ignorado por Git).
+La plantilla `config/conexiones.example.json` sirve para otras instalaciones.
+Admite los valores MONGODB_URI, MONGODB_DATABASE y SQLSERVER_DATABASE/HOST/PORT/
+USER/PASSWORD/DRIVER. Las variables de entorno tienen prioridad, por lo que
+`configurar-entorno.ps1` sigue funcionando, pero ya no es obligatorio cargarlo
+para usar la configuración local de este equipo.
 
-# Accedé a la documentación de la api Swagger en:
-[http://localhost:8000/swagger/
-
-## Endpoints principales
-| Tabla / Recurso     | Ruta base                                           | Métodos disponibles              | Descripción general                          |
-|---------------------|-----------------------------------------------------|----------------------------------|----------------------------------------------|
-| Usuario             | http://127.0.0.1:8000/api/TradConnect/usuarios/          | GET, POST, PUT, DELETE           | Gestión de usuarios del sistema              |
-| Cliente             | http://127.0.0.1:8000/api/TradConnect/clientes/          | GET, POST, PUT, DELETE           | Registro y administración de clientes        |
-| Proveedor           | http://127.0.0.1:8000/api/TradConnect/proveedores/       | GET, POST, PUT, DELETE           | Gestión de proveedores y sus productos       |
-| Establecimiento     | http://127.0.0.1:8000/api/TradConnect/establecimientos/  | GET, POST, PUT, DELETE           | Información de locales físicos o virtuales   |
-| Productos           | http://127.0.0.1:8000/api/TradConnect/productos/         | GET, POST, PUT, DELETE           | Catálogo de productos disponibles            |
-| Pedido              | http://127.0.0.1:8000/api/TradConnect/pedidos/           | GET, POST, PUT, DELETE           | Registro y seguimiento de pedidos            |
-| Factura             | http://127.0.0.1:8000/api/TradConnect/facturas/          | GET, POST, PUT, DELETE           | Generación y consulta de facturas            |
-| EstadoProducto      | http://127.0.0.1:8000/api/TradConnect/estado-producto/   | GET, POST, PUT, DELETE           | Estado actual de productos (activo, agotado) |
-| EstadoPedido        | http://127.0.0.1:8000/api/TradConnect/estado-pedido/     | GET, POST, PUT, DELETE           | Estado del pedido (pendiente, entregado)     |
-| MetodoPago          | http://127.0.0.1:8000/api/TradConnect/metodos-pago/      | GET, POST, PUT, DELETE           | Métodos de pago disponibles                  |
-| Categoría           | http://127.0.0.1:8000/api/TradConnect/categorias/        | GET, POST, PUT, DELETE           | Clasificación de productos por categoría     |]
-
-# Pruebas
-- Apidog
-- Postman
-
-## Estructura del proyecto
-
-```plaintext
-TradConnect/
-├── config/
-│   ├── __pycache__/
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
-├── TradConnect/
-│   ├── __pycache__/
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── apps.py
-│   ├── models.py
-│   ├── serializers.py
-│   ├── urls.py
-│   └── views.py
-├── manage.py
-└── requirements.txt
-```
-
-# Desarrollado por:
-Estudiantes de Ingeniería en Sistemas de cuarto semestre de la UNAN-MANAGUA
-- Whilton Junior Verrio Carballo
--Junice Abigail Salazar Sanchez
--Katerin Jimena Flores Amador
-
-
-
-- Email:
--  [w138jvc@gmail.com]
--  [sanchezjunice61@gmail.com]
--  [fkaterin163@gmail.com]
-
-- GitHub: [Whil138](https://github.com/Whil138)
+`javascripts/config.js` define la dirección inicial de Django. Al iniciar la web,
+`api.loadConfiguration()` consulta la ruta central de configuración y obtiene la
+URL base y los enlaces generados con `reverse()`. Solo acepta una configuración
+del mismo servidor. Si se cambia el puerto, también debe ajustarse esa dirección
+inicial del cliente; las rutas concretas se generan desde Django.

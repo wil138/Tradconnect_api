@@ -78,7 +78,7 @@ class DocumentTests(SimpleTestCase):
                 call_command('cargar_documentos_nosql', str(path))
         database.return_value.__getitem__.return_value.bulk_write.assert_not_called()
 
-    @patch('Tradconnect_no_sql.services.sql.Categoria.objects.filter')
+    @patch('Tradconnect_no_sql.services.sql.SqlCategoria.objects.filter')
     def test_missing_sql_reference_is_rejected(self, category):
         from rest_framework.exceptions import ValidationError as APIValidationError
         from .services import validate_document
