@@ -12,12 +12,15 @@ transaccionales y catálogos existentes en SQL Server.
 
 ## Documentación interactiva
 
-Con el servidor iniciado:
+Con el servidor local iniciado en el puerto `8001`:
 
-- `http://127.0.0.1:8000/` redirige a Swagger.
-- `http://127.0.0.1:8000/swagger/` muestra Swagger UI.
-- `http://127.0.0.1:8000/redoc/` muestra ReDoc.
-- `http://127.0.0.1:8000/swagger.json/` y `/swagger.yaml/` exponen el esquema OpenAPI.
+- `http://localhost:8001/` redirige a Swagger.
+- `http://localhost:8001/swagger/` muestra Swagger UI.
+- `http://localhost:8001/redoc/` muestra ReDoc.
+- `http://localhost:8001/swagger.json/` y `/swagger.yaml/` exponen el esquema OpenAPI.
+- `http://localhost:8001/conexiones/` muestra el panel visual de conexiones.
+- `http://localhost:8001/api/configuracion/` publica las URLs disponibles.
+- `http://localhost:8001/api/conexiones/` comprueba disponibilidad y preparación de SQL Server y MongoDB.
 
 Las rutas de negocio SQL comienzan con `/api/`; las rutas documentales y de
 analítica comienzan con `/api/nosql/`.
@@ -38,6 +41,165 @@ analítica comienzan con `/api/nosql/`.
   pedidos y las escrituras de colecciones tienen validaciones propias, pero no
   equivalen a una transacción común entre las dos bases.
 
+## Tecnologías del backend
+
+Las versiones instalables se mantienen en `requirements.txt`.
+
+| Tecnología | Uso |
+|---|---|
+| Python | Lenguaje del servidor, pruebas y comandos de mantenimiento. |
+| Django | Proyecto, configuración, aplicaciones, templates y herramientas de gestión. |
+| Django REST Framework 3.17.1 | Endpoints JSON, vistas, serialización, permisos y respuestas HTTP. |
+| SimpleJWT 5.5.1 / JWT | Tokens de acceso y refresh; el autenticador propio resuelve la identidad de TradConnect. |
+| SQL Server | Persistencia relacional de catálogos y operaciones del negocio. |
+| `mssql-django` 1.7.2 y `pyodbc` 5.3 | Integración de Django con SQL Server mediante ODBC. Requiere un driver ODBC disponible en el sistema. |
+| MongoDB / PyMongo 4.19 | Identidad híbrida y colecciones documentales, incluidos feedback y pedidos sincronizados. |
+| Pydantic 2.14 | Validación de documentos NoSQL, tipos, enumeraciones y esquemas JSON. |
+| drf-yasg 1.21 / OpenAPI | Generación del esquema de la API y las interfaces Swagger UI/ReDoc. |
+| django-cors-headers 4.9 | Middleware CORS para comunicación desde el frontend servido por separado. |
+
+No se requiere Node.js para ejecutar el servidor Django. Chart.js, Font Awesome
+y Google Fonts pertenecen al frontend y no son dependencias Python de la API.
+
+## Estructura del backend
+
+```text
+TradConnect_Api/
+├── manage.py
+├── requirements.txt
+├── config/
+│   ├── settings.py
+│   ├── urls.py
+│   ├── connections.py
+│   ├── connection_settings.py
+│   ├── mongodb.py
+│   ├── schema.py
+│   ├── asgi.py
+│   └── wsgi.py
+├── TradConnect/
+│   ├── hybrid_views.py
+│   ├── hybrid_serializers.py
+│   ├── sql_models.py
+│   ├── identities.py
+│   ├── authentication.py
+│   └── commerce.py
+└── Tradconnect_no_sql/
+    ├── models.py
+    ├── services.py
+    ├── document_views.py
+    ├── customer_views.py
+    ├── analytics_views.py
+    ├── order_sync.py
+    ├── management/commands/
+    └── fixtures/
+```
+
+### `config/`
+
+Es el paquete de configuración Django y el punto central de integración:
+
+- `settings.py`: aplicaciones, middleware, conexiones, JWT, zona horaria y DRF.
+- `urls.py`: incluye rutas SQL y NoSQL; también publica Swagger/ReDoc, la
+  configuración dinámica del cliente y el estado de conexiones.
+- `connections.py`: comprobaciones de conectividad y estado SQL/MongoDB, además
+  del template del panel visual.
+- `connection_settings.py`: lectura de la configuración privada local. Las
+  variables de entorno tienen prioridad.
+- `conexiones.example.json`: plantilla sin credenciales para otra instalación.
+- `conexiones.local.json`: archivo privado local, opcional y excluido del control
+  de versiones.
+- `mongodb.py`: creación/caché del cliente y acceso a la base MongoDB.
+- `schema.py`: generación y agrupación de etiquetas de la documentación OpenAPI.
+- `local_secret.py`: acceso al secreto local de Django.
+- `asgi.py` y `wsgi.py`: puntos de entrada de despliegue.
+
+### `TradConnect/`
+
+Aplicación SQL y de comercio. `urls.py` conecta las rutas activas a
+`hybrid_views.py`; los modelos de negocio activos están en `sql_models.py` y
+apuntan al esquema SQL existente. Los módulos principales:
+
+- `hybrid_views.py`: autenticación, empresas, sucursales, productos, marketplace,
+  inventario, promociones, pedidos, dashboard y catálogos.
+- `hybrid_serializers.py`: entradas/salidas para recursos activos y reglas de
+  presentación.
+- `identities.py` y `authentication.py`: resolución de empresa/rol y validación
+  del JWT.
+- `commerce.py`: validación de stock, cotización y creación de pedidos.
+- `errors.py`: formato controlado de errores de base de datos/configuración.
+- `models.py`, `serializers.py` y `views.py`: compatibilidad con instalaciones o
+  contratos anteriores; confirmar las rutas activas en `urls.py` antes de
+  utilizarlos.
+- `templates/config/` y `static/config/`: template, CSS y JavaScript del panel
+  de conexiones.
+- `admin.py`, `apps.py` y `__init__.py`: configuración Django de la aplicación.
+
+### `Tradconnect_no_sql/`
+
+Aplicación de identidad/documentos, analítica y sincronización:
+
+- `models.py`: trece esquemas Pydantic de colecciones.
+- `services.py`: validación de campos y referencias, creación y serialización.
+- `document_views.py`: operaciones administrativas CRUD de colecciones tipadas.
+- `customer_views.py`: consultas y escrituras de feedback con alcance de empresa.
+- `analytics_views.py`: agregaciones de pedidos SQL y feedback MongoDB.
+- `order_views.py` y `order_sync.py`: lectura y sincronización de pedidos web.
+- `projections.py` y `views.py`: acceso de solo lectura a proyecciones de modelos
+  SQL en forma documental.
+- `audit.py`, `cleaning.py`, `data_pipeline.py` y `restore_data.py`: auditoría,
+  limpieza, extracción, importación y restauración de datos.
+- `signals.py`: programación de sincronización asociada a eventos de modelos.
+- `management/commands/`: comandos Django de importación y mantenimiento.
+- `fixtures/`: JSON de ejemplo para probar la forma de los documentos; actualizar
+  los IDs de referencia para los datos de la instalación.
+- `test_*.py` y `tests.py`: pruebas automatizadas del backend.
+
+### Pruebas del backend
+
+Las pruebas están dentro de `Tradconnect_no_sql/` y se ejecutan con
+`python manage.py test Tradconnect_no_sql`:
+
+| Archivo | Área principal |
+|---|---|
+| `test_schema.py` | Esquemas documentales y compatibilidad de Swagger. |
+| `test_documents.py`, `test_collection_access.py` | Validación CRUD y permisos por colección. |
+| `test_customer_flows.py`, `test_web_integration.py` | Flujos por empresa y contratos utilizados por la web. |
+| `test_hybrid_identity.py` | Identidades y JWT híbridos. |
+| `test_orders.py` | Sincronización y proyección de pedidos. |
+| `test_analytics_exports.py` | Alcance de analítica y exportaciones. |
+| `test_audit.py` | Resultados de auditoría de datos. |
+| `test_cleaning.py`, `test_data_pipeline.py` | Limpieza, extracción e importación. |
+| `test_restore_data.py` | Validación del flujo de restauración. |
+| `test_connections.py` | Configuración y estado de conexiones. |
+| `tests.py` | Pruebas generales de integración/API que no pertenecen a los módulos anteriores. |
+
+### Carpetas locales que no son módulos de aplicación
+
+- `.venv/`: paquetes instalados en el entorno Python local. Se reconstruye desde
+  `requirements.txt`; no se copia ni versiona como código fuente.
+- `.idea/`: configuración del IDE.
+- `.git/`: metadatos de control de versiones del backend.
+- `logs/`: registros locales de ejecución.
+- `respaldos/`: respaldos de datos para recuperación; pueden contener información
+  sensible y no deben compartirse sin verificar su contenido y permisos.
+- `exportaciones_separadas/`: salidas de extracción organizadas por origen SQL
+  y NoSQL; se consideran artefactos de datos, no fixtures de aplicación.
+
+### Archivos del directorio API
+
+- `manage.py`: interfaz de comandos de Django.
+- `requirements.txt`: versiones de dependencias Python del backend.
+- `base_de_datos.md`: referencia documental del esquema y datos de SQL Server.
+- `configurar-entorno.ps1` y `configurar-entorno.example.ps1`: scripts PowerShell
+  para preparar variables de entorno en instalaciones locales; usa el ejemplo
+  como referencia y no compartas valores privados.
+- `.gitignore`: excluye entornos virtuales, conexión local, secretos y artefactos
+  de datos locales.
+- `.django-secret-key`: secreto de ejecución local; no publicar ni copiar su
+  contenido a documentación o repositorios.
+- `datos_limpios.jsonl`: artefacto de datos de extracción; no es código ni una
+  fixture genérica. Verifica su contenido y permisos antes de compartirlo.
+
 ## Instalación y configuración
 
 Desde la carpeta `TradConnect_Api`:
@@ -45,31 +207,33 @@ Desde la carpeta `TradConnect_Api`:
 ```powershell
 python -m pip install -r requirements.txt
 
-# Ajusta los valores al servidor SQL Server local.
+# Opcional: las variables de entorno prevalecen sobre config/conexiones.local.json.
 $env:SQLSERVER_HOST = 'SERVIDOR\INSTANCIA'
 $env:SQLSERVER_DATABASE = 'TradConnect'
 # Opcional: autenticación SQL en vez de la cuenta Windows del proceso.
 $env:SQLSERVER_USER = 'usuario'
 $env:SQLSERVER_PASSWORD = 'contraseña'
 
-# MongoDB es necesario para autenticación, colecciones y analítica de feedback.
+# Configura MongoDB si no se encuentra en el archivo local privado.
 $env:MONGODB_URI = 'mongodb://localhost:27017'
 $env:MONGODB_DATABASE = 'tradconnect'
 
 python manage.py check
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8001
 ```
 
-`SQLSERVER_HOST` y `SQLSERVER_DATABASE` también tienen valores por defecto en
-`config/settings.py`; configura explícitamente los valores del entorno. Si no se
-define `SQLSERVER_USER`, el backend intenta usar la cuenta Windows del proceso.
-El driver ODBC predeterminado es `ODBC Driver 17 for SQL Server`; se puede cambiar
-con `SQLSERVER_DRIVER`. `SQLSERVER_PORT` es opcional.
+`SQLSERVER_HOST`, `SQLSERVER_DATABASE`, las credenciales y las opciones MongoDB
+pueden provenir de `config/conexiones.local.json` o de variables de entorno; las
+variables de entorno prevalecen. Si no se define `SQLSERVER_USER`, el backend
+intenta usar la cuenta Windows del proceso. El driver ODBC predeterminado es
+`ODBC Driver 17 for SQL Server`; se puede cambiar con `SQLSERVER_DRIVER`.
+`SQLSERVER_PORT` es opcional.
 
-`MONGODB_URI` no tiene valor predeterminado: debe configurarse para usar MongoDB.
-La moneda configurada para el marketplace se fija mediante
-`MARKETPLACE_CURRENCY_ID` (por defecto `1`). No guardes credenciales en archivos
-versionados ni en ejemplos que vayas a publicar.
+Si MongoDB no está configurado, la documentación y configuración pública pueden
+seguir disponibles, pero las funciones que necesitan identidades o documentos
+MongoDB devolverán error/no disponibilidad. La moneda del marketplace se fija
+mediante `MARKETPLACE_CURRENCY_ID` (por defecto `1`). No guardes credenciales en
+archivos versionados ni en ejemplos que vayas a publicar.
 
 Las migraciones de Django solo administran tablas internas de Django. No crean
 ni reparan las tablas de negocio SQL marcadas como `managed=False`. Comprueba la
