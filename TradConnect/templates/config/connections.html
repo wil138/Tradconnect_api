@@ -1,0 +1,12 @@
+{% load static %}
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conexiones | TradConnect API</title><link rel="icon" href="data:,"><link rel="stylesheet" href="{% static 'config/connections.css' %}"></head>
+<body><main class="connections" data-endpoint="{% url 'api-connections' %}">
+<header><p class="eyebrow">TradConnect API</p><h1>Conexiones y rutas</h1><p>SQL Server y MongoDB se publican desde el mismo servidor Django.</p>
+<nav aria-label="Herramientas de la API"><a href="{% url 'schema-swagger-ui' %}">Swagger</a><a href="{% url 'schema-redoc' %}">ReDoc</a><a href="{% url 'api-root' %}">Raíz de la API</a><a href="{% url 'api-configuration' %}">Configuración JSON</a></nav></header>
+<section class="base-url"><h2>URL base para la web</h2><code id="baseUrl">Consultando al servidor…</code><p>Esta es la dirección que utiliza el cliente JavaScript. Las credenciales de las bases permanecen en el servidor.</p></section>
+<div class="cards"><section class="card" aria-labelledby="sqlTitle"><h2 id="sqlTitle">SQL Server</h2><p>Catálogos, productos, sucursales, existencias y pedidos.</p><strong id="sqlState">Comprobando…</strong><p id="sqlMessage"></p></section>
+<section class="card" aria-labelledby="mongoTitle"><h2 id="mongoTitle">MongoDB</h2><p>Usuarios, empresas, roles, preferencias, evaluaciones y reclamos.</p><strong id="mongoState">Comprobando…</strong><p id="mongoMessage"></p></section></div>
+<section><button type="button" id="refreshConnections">Comprobar conexiones</button><p id="connectionStatus" role="status" aria-live="polite">Cargando estado…</p></section>
+<section><h2>Accesos</h2><dl id="connectionLinks"></dl></section>
+<footer>Los estados se comprueban con consultas de lectura. Si una base falla, Swagger y la configuración siguen disponibles.</footer>
+</main><script src="{% static 'config/connections.js' %}"></script></body></html>
