@@ -7,8 +7,9 @@ from pathlib import Path
 from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-from .connection_settings import load_local_connections
+from .connection_settings import load_database_connections, load_local_connections
 LOCAL_CONNECTIONS = load_local_connections(BASE_DIR)
+DATABASE_CONNECTIONS = load_database_connections(os.environ, LOCAL_CONNECTIONS)
 
 from .local_secret import secret_key
 SECRET_KEY = secret_key(BASE_DIR)
@@ -77,15 +78,15 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'mssql',
-        'NAME': os.environ.get('SQLSERVER_DATABASE', LOCAL_CONNECTIONS.get('SQLSERVER_DATABASE', 'TradConnect')),
-        'HOST': os.environ.get('SQLSERVER_HOST', LOCAL_CONNECTIONS.get('SQLSERVER_HOST', r'Wil\WIL')),
-        'PORT': os.environ.get('SQLSERVER_PORT', LOCAL_CONNECTIONS.get('SQLSERVER_PORT', '')),
+        'NAME': DATABASE_CONNECTIONS['sql']['NAME'],
+        'HOST': DATABASE_CONNECTIONS['sql']['HOST'],
+        'PORT': DATABASE_CONNECTIONS['sql']['PORT'],
         # Sin USER, mssql-django usa la cuenta Windows del proceso.
-        'USER': os.environ.get('SQLSERVER_USER', LOCAL_CONNECTIONS.get('SQLSERVER_USER', '')),
-        'PASSWORD': os.environ.get('SQLSERVER_PASSWORD', LOCAL_CONNECTIONS.get('SQLSERVER_PASSWORD', '')),
+        'USER': DATABASE_CONNECTIONS['sql']['USER'],
+        'PASSWORD': DATABASE_CONNECTIONS['sql']['PASSWORD'],
         'OPTIONS': {
-            'driver': os.environ.get('SQLSERVER_DRIVER', LOCAL_CONNECTIONS.get('SQLSERVER_DRIVER', 'ODBC Driver 17 for SQL Server')),
-            'extra_params': 'TrustServerCertificate=yes',
+            'driver': DATABASE_CONNECTIONS['sql']['DRIVER'],
+            'extra_params': DATABASE_CONNECTIONS['sql']['EXTRA_PARAMS'],
         },
     },
 
@@ -99,8 +100,8 @@ DATABASE_ROUTERS = []
 # =========================================================
 # MONGODB (PyMongo; separado de las bases SQL de Django)
 # =========================================================
-MONGODB_URI = os.environ.get('MONGODB_URI', LOCAL_CONNECTIONS.get('MONGODB_URI'))
-MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE', LOCAL_CONNECTIONS.get('MONGODB_DATABASE', 'tradconnect'))
+MONGODB_URI = DATABASE_CONNECTIONS['mongodb_uri']
+MONGODB_DATABASE = DATABASE_CONNECTIONS['mongodb_database']
 MARKETPLACE_CURRENCY_ID = int(os.environ.get('MARKETPLACE_CURRENCY_ID', '1'))
 
 # =========================================================

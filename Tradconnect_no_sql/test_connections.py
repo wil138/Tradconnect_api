@@ -1,7 +1,45 @@
 from unittest.mock import patch
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
+from django.core.exceptions import ImproperlyConfigured
 from config.connections import check_sql, check_mongo
+from config.connection_settings import load_database_connections, parse_sqlserver_connection_string
+
+
+class DatabaseConnectionSettingsTests(SimpleTestCase):
+    def test_sqlserver_odbc_connection_string_parses_required_fields(self):
+        result=parse_sqlserver_connection_string(
+            'Server=tcp:db.example,1433;Initial Catalog=TradConnect;'
+            'User ID=api-user;Password={p;{word}}};Encrypt=True;'
+        )
+        self.assertEqual(result,{
+            'HOST':'tcp:db.example,1433',
+            'NAME':'TradConnect',
+            'USER':'api-user',
+            'PASSWORD':'p;{word}',
+        })
+
+    def test_cloud_profile_uses_separate_environment_values(self):
+        result=load_database_connections({
+            'DATABASE_PROFILE':'cloud',
+            'CLOUD_SQLSERVER_CONNECTION_STRING':(
+                'Server=tcp:db.example,1433;Initial Catalog=TradConnect;'
+                'User ID=api-user;Password=secret'
+            ),
+            'CLOUD_MONGODB_URI':'mongodb://cloud.example',
+            'CLOUD_MONGODB_DATABASE':'tradconnect_cloud',
+        },{'SQLSERVER_HOST':r'.\WIL','MONGODB_URI':'mongodb://localhost'})
+        self.assertEqual(result['profile'],'cloud')
+        self.assertEqual(result['sql']['HOST'],'tcp:db.example,1433')
+        self.assertEqual(result['mongodb_uri'],'mongodb://cloud.example')
+        self.assertEqual(result['mongodb_database'],'tradconnect_cloud')
+
+    def test_cloud_profile_requires_its_own_connections(self):
+        with self.assertRaisesMessage(ImproperlyConfigured,'CLOUD_SQLSERVER_CONNECTION_STRING'):
+            load_database_connections({'DATABASE_PROFILE':'cloud'},{
+                'SQLSERVER_HOST':r'.\WIL',
+                'MONGODB_URI':'mongodb://localhost',
+            })
 
 
 class ConnectionViewsTests(SimpleTestCase):

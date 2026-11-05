@@ -2,8 +2,8 @@
 
 > **Servidor Django de este proyecto:** `python manage.py runserver 127.0.0.1:8001`.
 > Swagger: http://localhost:8001/swagger/ · Conexiones: http://localhost:8001/conexiones/.
-> Se mantiene `config/urls.py` como entrada central. La configuración privada local
-> se carga automáticamente; las variables de entorno tienen prioridad.
+> Se mantiene `config/urls.py` como entrada central. La configuración local usa
+> SQL Server `.\WIL` y MongoDB `localhost`; las variables de entorno tienen prioridad.
 
 
 Documentación de la API activa en `TradConnect_Api`. El servicio usa Django REST
@@ -103,11 +103,10 @@ Es el paquete de configuración Django y el punto central de integración:
   configuración dinámica del cliente y el estado de conexiones.
 - `connections.py`: comprobaciones de conectividad y estado SQL/MongoDB, además
   del template del panel visual.
-- `connection_settings.py`: lectura de la configuración privada local. Las
-  variables de entorno tienen prioridad.
-- `conexiones.example.json`: plantilla sin credenciales para otra instalación.
-- `conexiones.local.json`: archivo privado local, opcional y excluido del control
-  de versiones.
+- `connection_settings.py`: lectura de valores de ejemplo sin credenciales.
+- `conexiones.example.json`: valores predeterminados para las bases locales.
+- `conexiones.local.json`: archivo privado ignorado por Git; no se carga
+  automaticamente para evitar mezclar las conexiones de Azure con las locales.
 - `mongodb.py`: creación/caché del cliente y acceso a la base MongoDB.
 - `schema.py`: generación y agrupación de etiquetas de la documentación OpenAPI.
 - `local_secret.py`: acceso al secreto local de Django.
@@ -207,33 +206,30 @@ Desde la carpeta `TradConnect_Api`:
 ```powershell
 python -m pip install -r requirements.txt
 
-# Opcional: las variables de entorno prevalecen sobre config/conexiones.local.json.
-$env:SQLSERVER_HOST = 'SERVIDOR\INSTANCIA'
-$env:SQLSERVER_DATABASE = 'TradConnect'
-# Opcional: autenticación SQL en vez de la cuenta Windows del proceso.
-$env:SQLSERVER_USER = 'usuario'
-$env:SQLSERVER_PASSWORD = 'contraseña'
-
-# Configura MongoDB si no se encuentra en el archivo local privado.
-$env:MONGODB_URI = 'mongodb://localhost:27017'
-$env:MONGODB_DATABASE = 'tradconnect'
-
 python manage.py check
 python manage.py runserver 127.0.0.1:8001
 ```
 
-`SQLSERVER_HOST`, `SQLSERVER_DATABASE`, las credenciales y las opciones MongoDB
-pueden provenir de `config/conexiones.local.json` o de variables de entorno; las
-variables de entorno prevalecen. Si no se define `SQLSERVER_USER`, el backend
-intenta usar la cuenta Windows del proceso. El driver ODBC predeterminado es
-`ODBC Driver 17 for SQL Server`; se puede cambiar con `SQLSERVER_DRIVER`.
-`SQLSERVER_PORT` es opcional.
+Por defecto, la API usa SQL Server local `.\WIL`, base `TradConnect`, autenticacion
+de Windows y el driver ODBC 18; MongoDB usa `mongodb://localhost:27017` y la base
+`tradconnect_db`. Verifica las conexiones en `/api/conexiones/`.
 
-Si MongoDB no está configurado, la documentación y configuración pública pueden
-seguir disponibles, pero las funciones que necesitan identidades o documentos
-MongoDB devolverán error/no disponibilidad. La moneda del marketplace se fija
-mediante `MARKETPLACE_CURRENCY_ID` (por defecto `1`). No guardes credenciales en
-archivos versionados ni en ejemplos que vayas a publicar.
+Para usar bases en la nube, define `DATABASE_PROFILE=cloud` y configura en el
+entorno seguro del servidor:
+
+- `CLOUD_SQLSERVER_CONNECTION_STRING`: cadena ODBC con `Server`, `Initial Catalog`,
+  `User ID` y `Password` (los secretos se leen del entorno, nunca de archivos del repo).
+- `CLOUD_MONGODB_URI`: URI de conexión MongoDB.
+- `CLOUD_MONGODB_DATABASE`: nombre de la base MongoDB.
+- Opcional: `CLOUD_SQLSERVER_DRIVER` (por defecto `ODBC Driver 18 for SQL Server`).
+
+En Azure App Service, agrega estos valores en **Configuration > Application
+settings** y marca los que contienen credenciales como secretos. El perfil `cloud`
+no usa los valores locales como fallback: si falta una variable necesaria, el
+servidor falla explícitamente al iniciar. Para volver a las bases locales, usa
+`DATABASE_PROFILE=local` o elimina la variable. No guardes credenciales ni URI
+privadas en archivos versionados. La moneda del marketplace se fija mediante
+`MARKETPLACE_CURRENCY_ID` (por defecto `1`).
 
 Las migraciones de Django solo administran tablas internas de Django. No crean
 ni reparan las tablas de negocio SQL marcadas como `managed=False`. Comprueba la
@@ -594,12 +590,13 @@ de `usuarios_empresas_roles`; muestra el estado de ambas bases y enlaces útiles
 Devuelve 503 si una base no está lista y no muestra URI, usuarios ni contraseñas.
 La documentación y la configuración pública siguen accesibles si una base falla.
 
-El servidor lee `config/conexiones.local.json` (privado e ignorado por Git).
-La plantilla `config/conexiones.example.json` sirve para otras instalaciones.
-Admite los valores MONGODB_URI, MONGODB_DATABASE y SQLSERVER_DATABASE/HOST/PORT/
-USER/PASSWORD/DRIVER. Las variables de entorno tienen prioridad, por lo que
-`configurar-entorno.ps1` sigue funcionando, pero ya no es obligatorio cargarlo
-para usar la configuración local de este equipo.
+La plantilla `config/conexiones.example.json` define los valores locales sin
+credenciales. El archivo `config/conexiones.local.json` se conserva privado e
+ignorado por Git, pero no se carga automaticamente para evitar que una URI o
+servidor remoto se use por accidente en desarrollo local. Para otra base, define
+`MONGODB_URI`, `MONGODB_DATABASE` y `SQLSERVER_DATABASE/HOST/PORT/USER/PASSWORD/
+DRIVER` como variables de entorno; estas prevalecen sobre los valores locales.
+En Azure, define esas variables en la configuracion de Application Settings.
 
 `javascripts/config.js` define la dirección inicial de Django. Al iniciar la web,
 `api.loadConfiguration()` consulta la ruta central de configuración y obtiene la

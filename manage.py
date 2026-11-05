@@ -6,6 +6,7 @@ import sys
 #python manage.py runserver
 def main():
     """Run administrative tasks."""
+   #os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.connection_settings')
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     try:
         from django.core.management import execute_from_command_line

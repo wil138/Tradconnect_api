@@ -1,4 +1,11 @@
+
 {
+  "SQLSERVER_DATABASE": "TradConnect",
+  "SQLSERVER_HOST": ".\\WIL",
+  "SQLSERVER_PORT": "",
+  "SQLSERVER_USER": "",
+  "SQLSERVER_PASSWORD": "",
+  "SQLSERVER_DRIVER": "ODBC Driver 18 for SQL Server",
   "MONGODB_URI": "mongodb://localhost:27017",
   "MONGODB_DATABASE": "tradconnect_db"
 }

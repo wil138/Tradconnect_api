@@ -43,4 +43,4 @@ respaldos/
 .django-secret-key
 **/.django-secret-key
 
-**/conexiones.local.json
+
