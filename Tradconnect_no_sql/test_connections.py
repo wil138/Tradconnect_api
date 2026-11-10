@@ -118,6 +118,19 @@ class ConnectionViewsTests(SimpleTestCase):
         self.assertNotIn('MONGODB_URI',str(response.data))
         self.assertEqual(response['Cache-Control'],'no-store')
 
+    def test_public_configuration_uses_forwarded_https_scheme(self):
+        response=self.client.get(
+            '/api/configuracion/',
+            HTTP_HOST='api.example.com',
+            HTTP_X_FORWARDED_PROTO='https',
+        )
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.data['api_base_url'],'https://api.example.com/api')
+        self.assertEqual(response.data['connections_url'],'https://api.example.com/api/conexiones/')
+
+    def test_http_and_https_are_not_redirected_by_default(self):
+        self.assertFalse(settings.SECURE_SSL_REDIRECT)
+
     def test_visualization_page_does_not_query_databases(self):
         response=self.client.get('/conexiones/')
         self.assertContains(response,'data-endpoint="/api/conexiones/"')

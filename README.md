@@ -314,6 +314,22 @@ az acr build --registry <nombre-acr> --image tradconnect-api:v1 .
 Selecciona esa imagen del registro al crear/configurar el servicio web Linux de
 App Service.
 
+#### HTTP y HTTPS
+
+En Azure App Service, HTTPS termina en el frontal administrado por Azure; el
+contenedor Gunicorn recibe HTTP internamente. Django reconoce el encabezado
+`X-Forwarded-Proto: https` que envía ese frontal, por lo que las URLs absolutas
+publicadas por `/api/configuracion/` usan HTTPS cuando la solicitud original fue
+HTTPS. Configura un certificado TLS para el dominio y deja **HTTPS Only**
+desactivado si necesitas aceptar tanto HTTP como HTTPS. El ajuste
+`SECURE_SSL_REDIRECT` puede establecerse en `true` para redirigir HTTP a HTTPS,
+pero debe dejarse sin definir (o en `false`) para atender ambos protocolos.
+
+Al usar otro proxy inverso, este debe terminar TLS, establecer o sobrescribir
+`X-Forwarded-Proto` y no permitir que el cliente controle ese encabezado. La
+configuración local `runserver` y el contenedor Gunicorn sin proxy TLS sirven
+HTTP; para HTTPS necesitan un proxy/certificado TLS delante de la aplicación.
+
 En **App Service > Configuration > Application settings**, agrega:
 
 ```text

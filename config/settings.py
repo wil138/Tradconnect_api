@@ -15,6 +15,10 @@ from .local_secret import secret_key
 SECRET_KEY = secret_key(BASE_DIR)
 DEBUG = False
 ALLOWED_HOSTS = ['*']
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', '').strip().lower() in {
+    '1', 'true', 'yes', 'on',
+}
 
 # =========================================================
 # APLICACIONES INSTALADAS
