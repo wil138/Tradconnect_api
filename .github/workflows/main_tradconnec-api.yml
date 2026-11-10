@@ -66,6 +66,7 @@ jobs:
           client-id: "2808cfc3-0313-495b-9253-cd58990fc87f"
           tenant-id: "e47646fe-da27-4518-8436-5f8b158ba127"
           subscription-id: "35212746-5029-4bae-96ae-9d42409f06a2"
+            allow-no-subscriptions: true
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
