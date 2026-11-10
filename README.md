@@ -57,6 +57,8 @@ Las versiones instalables se mantienen en `requirements.txt`.
 | Pydantic 2.14 | Validación de documentos NoSQL, tipos, enumeraciones y esquemas JSON. |
 | drf-yasg 1.21 / OpenAPI | Generación del esquema de la API y las interfaces Swagger UI/ReDoc. |
 | django-cors-headers 4.9 | Middleware CORS para comunicación desde el frontend servido por separado. |
+| Gunicorn 23 | Servidor WSGI que ejecuta Django en el contenedor Linux de Azure App Service. |
+| WhiteNoise 6.9 | Sirve los archivos estáticos recolectados por Django dentro del contenedor. |
 
 No se requiere Node.js para ejecutar el servidor Django. Chart.js, Font Awesome
 y Google Fonts pertenecen al frontend y no son dependencias Python de la API.
@@ -196,6 +198,8 @@ Las pruebas están dentro de `Tradconnect_no_sql/` y se ejecutan con
   de datos locales.
 - `.django-secret-key`: secreto de ejecución local; no publicar ni copiar su
   contenido a documentación o repositorios.
+- `Dockerfile` y `.dockerignore`: imagen Linux para Azure App Service con
+  Gunicorn y ODBC 18; el contexto de la imagen excluye secretos y datos locales.
 - `datos_limpios.jsonl`: artefacto de datos de extracción; no es código ni una
   fixture genérica. Verifica su contenido y permisos antes de compartirlo.
 
@@ -209,8 +213,9 @@ local o pueden contener secretos o datos reales:
 | `__pycache__/`, `*.py[cod]`, `*$py.class` | Caché y bytecode generados al ejecutar Python. |
 | `.venv/`, `env/`, `venv/` | Entornos virtuales; se reconstruyen con `requirements.txt` y no se comparten entre sistemas. |
 | `*.log`, `logs/`, `local_settings.py`, `db.sqlite3`, `*.sqlite3` | Registros y bases de datos locales/de desarrollo, que pueden incluir datos privados. |
-| `.coverage`, `.coverage.*`, `htmlcov/`, `.pytest_cache/`, `.tox/` | Resultados temporales de pruebas y cobertura, no las pruebas fuente. |
+| `.coverage`, `.coverage.*`, `htmlcov/`, `.pytest_cache/`, `.tox/`, `staticfiles/` | Resultados de pruebas y archivos estáticos recolectados para despliegue; se regeneran. |
 | `.vscode/`, `.vs/`, `.idea/` | Preferencias locales de editores e IDE. |
+| Elementos de `.dockerignore` | Evitan copiar repositorio Git, entornos locales, secretos y datos a la imagen Docker. |
 | `build/`, `dist/`, `*.egg-info/` | Paquetes y artefactos de compilación que pueden regenerarse desde el código. |
 | `pip-log.txt`, `pip-delete-this-directory.txt` | Archivos temporales generados por el instalador de Python. |
 | `.DS_Store`, `Thumbs.db` | Metadatos de carpetas creados por macOS o Windows. |
@@ -290,19 +295,59 @@ No subas estas cadenas al repositorio ni uses `conexiones.local.json` en Render:
 el servicio debe recibirlas por su entorno. Autoriza también las IP de salida del
 servicio Render en las reglas de red de Azure SQL y Cosmos DB.
 
-En Azure App Service, agrega estos valores en **Configuration > Application
-settings** y marca los que contienen credenciales como secretos. El perfil `cloud`
-no usa las conexiones SQL/Mongo locales como fallback: si falta una variable
-necesaria, el servidor falla explícitamente al iniciar. Para volver a las bases
-locales en desarrollo, selecciona `DATABASE_PROFILE=local`. La moneda del
-marketplace se configura mediante `MARKETPLACE_CURRENCY_ID` (por defecto `1`).
+#### Azure App Service (Linux, contenedor personalizado)
 
-**CORS en la configuración actual:** `config/settings.py` establece
-`CORS_ALLOW_ALL_ORIGINS = True`; por lo tanto, el backend permite solicitudes
-desde cualquier origen web. No existe actualmente una lista por entorno basada
-en `FRONTEND_URL` o `CORS_ALLOWED_ORIGINS`, ni se habilitan credenciales CORS.
-Antes de exponer la API en producción, restringe CORS a los orígenes de confianza
-en la configuración Django y valida esa configuración en el entorno desplegado.
+El `Dockerfile` prepara Python 3.12, ODBC Driver 18, dependencias, archivos
+estáticos y Gunicorn. Puedes construirla localmente:
+
+```powershell
+docker build -t tradconnect-api .
+```
+
+O pedir a Azure Container Registry (ACR) que la construya desde la raíz del
+repositorio, sin instalar Docker en tu equipo:
+
+```powershell
+az acr build --registry <nombre-acr> --image tradconnect-api:v1 .
+```
+
+Selecciona esa imagen del registro al crear/configurar el servicio web Linux de
+App Service.
+
+En **App Service > Configuration > Application settings**, agrega:
+
+```text
+WEBSITES_PORT=8000
+DATABASE_PROFILE=cloud
+CLOUD_SQLSERVER_CONNECTION_STRING=<cadena ODBC completa>
+CLOUD_SQLSERVER_DRIVER=ODBC Driver 18 for SQL Server
+CLOUD_MONGODB_URI=<URI privada de MongoDB/Cosmos DB>
+CLOUD_MONGODB_DATABASE=<nombre de base>
+DJANGO_SECRET_KEY=<clave aleatoria larga y privada>
+```
+
+Configura las tres credenciales como valores secretos. Genera `DJANGO_SECRET_KEY`
+una sola vez y guárdala en la configuración del servicio, no en el repositorio;
+por ejemplo, puedes generarla en una terminal de confianza con
+`python -c "import secrets; print(secrets.token_urlsafe(64))"`. El contenedor
+escucha en el puerto `8000`; el `CMD` de la imagen inicia Gunicorn y los archivos
+estáticos se sirven con WhiteNoise. No configures `runserver` como comando de
+producción.
+
+Habilita la conectividad de red desde App Service hacia SQL Server y MongoDB o
+Cosmos DB, y asegúrate de que las reglas/firewall de las bases acepten esa ruta.
+El proceso de despliegue no crea las tablas de negocio SQL: deben existir antes
+de probar los endpoints. Tras iniciar el servicio, comprueba
+`https://<app>.azurewebsites.net/api/conexiones/` y revisa **Log stream** y los
+logs del contenedor si responde `503`. No ejecutes migraciones de Django sobre
+la base de negocio sin revisar primero qué tablas administra Django.
+
+La aplicación deja `DEBUG=False`. `ALLOWED_HOSTS=['*']` y
+`CORS_ALLOW_ALL_ORIGINS=True` permanecen intencionalmente abiertos para este
+proyecto, como se solicitó. CORS permite que navegadores de cualquier origen
+intenten llamar a la API; no reemplaza autenticación ni permisos en los endpoints.
+La moneda del marketplace se configura mediante `MARKETPLACE_CURRENCY_ID`
+(por defecto `1`).
 
 Las migraciones de Django solo administran tablas internas de Django. No crean
 ni reparan las tablas de negocio SQL marcadas como `managed=False`. Comprueba la
