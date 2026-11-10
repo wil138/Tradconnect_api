@@ -1,18 +1,25 @@
-"""Selecciona conexiones locales o remotas configuradas en el entorno."""
+"""Selecciona conexiones locales o remotas configuradas por entorno y archivos."""
 import json
 from django.core.exceptions import ImproperlyConfigured
 
 
 def load_local_connections(base_dir):
-    path=base_dir/'config'/'conexiones.example.json'
-    if not path.exists(): return {}
-    try:
-        values=json.loads(path.read_text(encoding='utf-8'))
-        if not isinstance(values,dict) or any(not isinstance(value,str) for value in values.values()):
-            raise ValueError()
-        return values
-    except (OSError,ValueError):
-        raise ImproperlyConfigured('Revisa el formato de config/conexiones.example.json; se requiere un objeto JSON con valores de texto.') from None
+    config_dir = base_dir / 'config'
+    values = {}
+    for filename in ('conexiones.example.json', 'conexiones.local.json'):
+        path = config_dir / filename
+        if not path.exists():
+            continue
+        try:
+            file_values = json.loads(path.read_text(encoding='utf-8-sig'))
+            if not isinstance(file_values, dict) or any(not isinstance(value, str) for value in file_values.values()):
+                raise ValueError()
+            values.update(file_values)
+        except (OSError, ValueError):
+            raise ImproperlyConfigured(
+                f'Revisa el formato de config/{filename}; se requiere un objeto JSON con valores de texto.'
+            ) from None
+    return values
 
 
 def parse_sqlserver_connection_string(value):
@@ -80,7 +87,10 @@ def parse_sqlserver_connection_string(value):
 
 
 def load_database_connections(environ, local_connections):
-    profile = environ.get('DATABASE_PROFILE', 'local').strip().lower()
+    profile = environ.get(
+        'DATABASE_PROFILE',
+        local_connections.get('DATABASE_PROFILE', 'local'),
+    ).strip().lower()
     if profile == 'local':
         return {
             'profile': profile,
@@ -99,9 +109,18 @@ def load_database_connections(environ, local_connections):
     if profile != 'cloud':
         raise ImproperlyConfigured('DATABASE_PROFILE debe ser "local" o "cloud".')
 
-    connection_string = environ.get('CLOUD_SQLSERVER_CONNECTION_STRING', '')
-    mongodb_uri = environ.get('CLOUD_MONGODB_URI', '')
-    mongodb_database = environ.get('CLOUD_MONGODB_DATABASE', '')
+    connection_string = environ.get(
+        'CLOUD_SQLSERVER_CONNECTION_STRING',
+        local_connections.get('CLOUD_SQLSERVER_CONNECTION_STRING', ''),
+    )
+    mongodb_uri = environ.get(
+        'CLOUD_MONGODB_URI',
+        local_connections.get('CLOUD_MONGODB_URI', ''),
+    )
+    mongodb_database = environ.get(
+        'CLOUD_MONGODB_DATABASE',
+        local_connections.get('CLOUD_MONGODB_DATABASE', ''),
+    )
     if not connection_string or not mongodb_uri or not mongodb_database:
         raise ImproperlyConfigured(
             'El perfil cloud requiere CLOUD_SQLSERVER_CONNECTION_STRING, CLOUD_MONGODB_URI y CLOUD_MONGODB_DATABASE.'
@@ -111,7 +130,10 @@ def load_database_connections(environ, local_connections):
         'sql': {
             **parse_sqlserver_connection_string(connection_string),
             'PORT': '',
-            'DRIVER': environ.get('CLOUD_SQLSERVER_DRIVER', 'ODBC Driver 18 for SQL Server'),
+            'DRIVER': environ.get(
+                'CLOUD_SQLSERVER_DRIVER',
+                local_connections.get('CLOUD_SQLSERVER_DRIVER', 'ODBC Driver 18 for SQL Server'),
+            ),
             'EXTRA_PARAMS': 'Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30',
         },
         'mongodb_uri': mongodb_uri,

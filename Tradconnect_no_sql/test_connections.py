@@ -1,12 +1,38 @@
+import json
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
+from django.conf import settings
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from django.core.exceptions import ImproperlyConfigured
 from config.connections import check_sql, check_mongo
-from config.connection_settings import load_database_connections, parse_sqlserver_connection_string
+from config.connection_settings import (
+    load_database_connections,
+    load_local_connections,
+    parse_sqlserver_connection_string,
+)
 
 
 class DatabaseConnectionSettingsTests(SimpleTestCase):
+    def test_private_connections_override_example_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_dir=Path(directory)/'config'
+            config_dir.mkdir()
+            (config_dir/'conexiones.example.json').write_text(
+                json.dumps({'DATABASE_PROFILE':'local','MONGODB_DATABASE':'local_db'}),
+                encoding='utf-8',
+            )
+            (config_dir/'conexiones.local.json').write_text(
+                json.dumps({'DATABASE_PROFILE':'cloud','MONGODB_DATABASE':'cloud_db'}),
+                encoding='utf-8',
+            )
+
+            result=load_local_connections(Path(directory))
+
+        self.assertEqual(result['DATABASE_PROFILE'],'cloud')
+        self.assertEqual(result['MONGODB_DATABASE'],'cloud_db')
+
     def test_sqlserver_odbc_connection_string_parses_required_fields(self):
         result=parse_sqlserver_connection_string(
             'Server=tcp:db.example,1433;Initial Catalog=TradConnect;'
@@ -34,6 +60,20 @@ class DatabaseConnectionSettingsTests(SimpleTestCase):
         self.assertEqual(result['mongodb_uri'],'mongodb://cloud.example')
         self.assertEqual(result['mongodb_database'],'tradconnect_cloud')
 
+    def test_cloud_profile_can_use_private_local_configuration(self):
+        result=load_database_connections({},{
+            'DATABASE_PROFILE':'cloud',
+            'CLOUD_SQLSERVER_CONNECTION_STRING':(
+                'Server=tcp:db.example,1433;Initial Catalog=TradConnect;'
+                'User ID=api-user;Password=sample-only'
+            ),
+            'CLOUD_MONGODB_URI':'mongodb://cloud.example',
+            'CLOUD_MONGODB_DATABASE':'tradconnect_cloud',
+        })
+        self.assertEqual(result['profile'],'cloud')
+        self.assertEqual(result['sql']['HOST'],'tcp:db.example,1433')
+        self.assertEqual(result['mongodb_uri'],'mongodb://cloud.example')
+
     def test_cloud_profile_requires_its_own_connections(self):
         with self.assertRaisesMessage(ImproperlyConfigured,'CLOUD_SQLSERVER_CONNECTION_STRING'):
             load_database_connections({'DATABASE_PROFILE':'cloud'},{
@@ -43,6 +83,29 @@ class DatabaseConnectionSettingsTests(SimpleTestCase):
 
 
 class ConnectionViewsTests(SimpleTestCase):
+    @override_settings(CORS_ALLOWED_ORIGINS=['https://web.example.com'])
+    def test_cors_allows_configured_web_origin(self):
+        response=self.client.get(
+            '/api/configuracion/',
+            HTTP_HOST='api.example.com',
+            HTTP_ORIGIN='https://web.example.com',
+        )
+        self.assertEqual(response['Access-Control-Allow-Origin'],'https://web.example.com')
+        self.assertEqual(response['Access-Control-Allow-Credentials'],'true')
+
+    @override_settings(CORS_ALLOWED_ORIGINS=['https://web.example.com'])
+    def test_cors_does_not_allow_unconfigured_origin(self):
+        response=self.client.get(
+            '/api/configuracion/',
+            HTTP_HOST='api.example.com',
+            HTTP_ORIGIN='https://other.example.com',
+        )
+        self.assertNotIn('Access-Control-Allow-Origin',response)
+
+    def test_cors_includes_local_frontend_origins(self):
+        self.assertIn('http://localhost:3000',settings.CORS_ALLOWED_ORIGINS)
+        self.assertIn('http://localhost:5173',settings.CORS_ALLOWED_ORIGINS)
+
     def test_original_home_still_opens_swagger(self):
         self.assertRedirects(self.client.get('/'),'/swagger/',fetch_redirect_response=False)
 

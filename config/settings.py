@@ -13,7 +13,7 @@ DATABASE_CONNECTIONS = load_database_connections(os.environ, LOCAL_CONNECTIONS)
 
 from .local_secret import secret_key
 SECRET_KEY = secret_key(BASE_DIR)
-DEBUG = True
+DEBUG = False
 ALLOWED_HOSTS = ['*']
 
 # =========================================================
@@ -81,7 +81,6 @@ DATABASES = {
         'NAME': DATABASE_CONNECTIONS['sql']['NAME'],
         'HOST': DATABASE_CONNECTIONS['sql']['HOST'],
         'PORT': DATABASE_CONNECTIONS['sql']['PORT'],
-        # Sin USER, mssql-django usa la cuenta Windows del proceso.
         'USER': DATABASE_CONNECTIONS['sql']['USER'],
         'PASSWORD': DATABASE_CONNECTIONS['sql']['PASSWORD'],
         'OPTIONS': {

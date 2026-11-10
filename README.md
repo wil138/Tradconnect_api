@@ -103,10 +103,11 @@ Es el paquete de configuración Django y el punto central de integración:
   configuración dinámica del cliente y el estado de conexiones.
 - `connections.py`: comprobaciones de conectividad y estado SQL/MongoDB, además
   del template del panel visual.
-- `connection_settings.py`: lectura de valores de ejemplo sin credenciales.
-- `conexiones.example.json`: valores predeterminados para las bases locales.
-- `conexiones.local.json`: archivo privado ignorado por Git; no se carga
-  automaticamente para evitar mezclar las conexiones de Azure con las locales.
+- `connection_settings.py`: carga de valores de ejemplo y sobrescrituras privadas.
+- `conexiones.example.json`: plantilla versionada para ejecutar la API con bases
+  locales en otra máquina cuando no exista una configuración privada.
+- `conexiones.local.json`: configuración privada ignorada por Git. Si existe,
+  sus valores sobrescriben los de `conexiones.example.json`.
 - `mongodb.py`: creación/caché del cliente y acceso a la base MongoDB.
 - `schema.py`: generación y agrupación de etiquetas de la documentación OpenAPI.
 - `local_secret.py`: acceso al secreto local de Django.
@@ -188,7 +189,6 @@ Las pruebas están dentro de `Tradconnect_no_sql/` y se ejecutan con
 
 - `manage.py`: interfaz de comandos de Django.
 - `requirements.txt`: versiones de dependencias Python del backend.
-- `base_de_datos.md`: referencia documental del esquema y datos de SQL Server.
 - `configurar-entorno.ps1` y `configurar-entorno.example.ps1`: scripts PowerShell
   para preparar variables de entorno en instalaciones locales; usa el ejemplo
   como referencia y no compartas valores privados.
@@ -199,37 +199,110 @@ Las pruebas están dentro de `Tradconnect_no_sql/` y se ejecutan con
 - `datos_limpios.jsonl`: artefacto de datos de extracción; no es código ni una
   fixture genérica. Verifica su contenido y permisos antes de compartirlo.
 
+### Archivos ignorados por Git y motivo
+
+Las reglas de `.gitignore` excluyen archivos que se regeneran, dependen del equipo
+local o pueden contener secretos o datos reales:
+
+| Regla o grupo | Motivo |
+|---|---|
+| `__pycache__/`, `*.py[cod]`, `*$py.class` | Caché y bytecode generados al ejecutar Python. |
+| `.venv/`, `env/`, `venv/` | Entornos virtuales; se reconstruyen con `requirements.txt` y no se comparten entre sistemas. |
+| `*.log`, `logs/`, `local_settings.py`, `db.sqlite3`, `*.sqlite3` | Registros y bases de datos locales/de desarrollo, que pueden incluir datos privados. |
+| `.coverage`, `.coverage.*`, `htmlcov/`, `.pytest_cache/`, `.tox/` | Resultados temporales de pruebas y cobertura, no las pruebas fuente. |
+| `.vscode/`, `.vs/`, `.idea/` | Preferencias locales de editores e IDE. |
+| `build/`, `dist/`, `*.egg-info/` | Paquetes y artefactos de compilación que pueden regenerarse desde el código. |
+| `pip-log.txt`, `pip-delete-this-directory.txt` | Archivos temporales generados por el instalador de Python. |
+| `.DS_Store`, `Thumbs.db` | Metadatos de carpetas creados por macOS o Windows. |
+| `.env`, `.env.*` (excepto `.env.example`), `config/conexiones.local.json`, `configurar-entorno.ps1` | Configuración privada que puede contener URI, contraseñas, hosts u otros secretos. |
+| `.django-secret-key` | Clave de firma local de Django/JWT; cada instalación debe generar y proteger la suya. |
+| `exportaciones*/`, `datos_limpios*.jsonl`, `respaldos/` | Exportaciones, datos extraídos y copias de seguridad; pueden contener registros de usuarios o del negocio. |
+
+Se deben mantener versionados `requirements.txt`, los archivos `*.example.*`,
+las fixtures de ejemplo, el código, las pruebas y los archivos estáticos: son
+necesarios para reproducir o probar el proyecto y no deben ocultarse con reglas
+globales como `*.json`. `.gitignore` solo afecta archivos que Git todavía no
+está siguiendo; los archivos `.idea/` que ya estén versionados seguirán en Git
+hasta que se decida quitarlos del índice.
+
 ## Instalación y configuración
 
-Desde la carpeta `TradConnect_Api`:
+Requisitos: Python instalado, el driver ODBC de SQL Server indicado en la
+configuración y servicios SQL Server y MongoDB accesibles para las funciones que
+se quieran ejecutar. Desde la carpeta `TradConnect_Api`, crea y activa un entorno
+virtual e instala las dependencias:
 
 ```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-
 python manage.py check
 python manage.py runserver 127.0.0.1:8001
 ```
 
-Por defecto, la API usa SQL Server local `.\WIL`, base `TradConnect`, autenticacion
-de Windows y el driver ODBC 18; MongoDB usa `mongodb://localhost:27017` y la base
-`tradconnect_db`. Verifica las conexiones en `/api/conexiones/`.
+Si PowerShell impide activar el entorno, habilita la ejecución de scripts para tu
+usuario según la política de tu equipo o ejecuta los comandos usando
+`.venv\Scripts\python.exe` sin activar el entorno. La configuración de ejemplo
+usa SQL Server local `.\WIL`, base `TradConnect`, autenticación de Windows y
+`ODBC Driver 18 for SQL Server`; MongoDB usa `mongodb://localhost:27017` y la
+base `tradconnect_db`. Ajusta estos valores en `config/conexiones.local.json` o
+mediante variables de entorno si tus servicios son distintos.
 
-Para usar bases en la nube, define `DATABASE_PROFILE=cloud` y configura en el
-entorno seguro del servidor:
+La aplicación lee primero `config/conexiones.example.json` y después
+`config/conexiones.local.json`; este último puede reemplazar valores del ejemplo.
+Las variables de entorno tienen prioridad sobre ambos archivos. El archivo local
+está ignorado por Git y no debe incluirse en despliegues. Para el perfil local se
+usan `SQLSERVER_HOST`, `SQLSERVER_DATABASE`, `SQLSERVER_PORT`, `SQLSERVER_USER`,
+`SQLSERVER_PASSWORD`, `SQLSERVER_DRIVER`, `MONGODB_URI` y `MONGODB_DATABASE`.
+`DATABASE_PROFILE` puede ser `local` o `cloud` (por defecto, `local`).
+
+En despliegue, configura en el entorno seguro del servidor:
 
 - `CLOUD_SQLSERVER_CONNECTION_STRING`: cadena ODBC con `Server`, `Initial Catalog`,
   `User ID` y `Password` (los secretos se leen del entorno, nunca de archivos del repo).
 - `CLOUD_MONGODB_URI`: URI de conexión MongoDB.
 - `CLOUD_MONGODB_DATABASE`: nombre de la base MongoDB.
 - Opcional: `CLOUD_SQLSERVER_DRIVER` (por defecto `ODBC Driver 18 for SQL Server`).
+- Opcional: `MARKETPLACE_CURRENCY_ID` (por defecto `1`).
+
+No guardes las cadenas de conexión, URI ni contraseñas en archivos versionados.
+En el perfil `cloud`, si falta una variable necesaria, el servidor falla al
+iniciar; no utiliza las conexiones locales como alternativa.
+
+### Ejemplo de variables de producción en Render
+
+En **Render > servicio web > Environment**, agrega estas variables. Sustituye
+cada marcador con los datos de producción desde Azure; los valores siguientes
+son solo una plantilla:
+
+```text
+DATABASE_PROFILE=cloud
+CLOUD_SQLSERVER_CONNECTION_STRING=Server=tcp:<servidor>.database.windows.net,1433;Initial Catalog=<base>;User ID=<usuario>;Password=<clave>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
+CLOUD_SQLSERVER_DRIVER=ODBC Driver 18 for SQL Server
+CLOUD_MONGODB_URI=mongodb://<usuario>:<clave-codificada>@<host>:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000
+CLOUD_MONGODB_DATABASE=<base-mongodb>
+```
+
+Marca las cadenas SQL y MongoDB como **secretas** en Render. Codifica los
+caracteres reservados de usuario/contraseña de MongoDB en formato URL; si la
+contraseña SQL contiene punto y coma, escríbela entre llaves en la cadena ODBC.
+No subas estas cadenas al repositorio ni uses `conexiones.local.json` en Render:
+el servicio debe recibirlas por su entorno. Autoriza también las IP de salida del
+servicio Render en las reglas de red de Azure SQL y Cosmos DB.
 
 En Azure App Service, agrega estos valores en **Configuration > Application
 settings** y marca los que contienen credenciales como secretos. El perfil `cloud`
-no usa los valores locales como fallback: si falta una variable necesaria, el
-servidor falla explícitamente al iniciar. Para volver a las bases locales, usa
-`DATABASE_PROFILE=local` o elimina la variable. No guardes credenciales ni URI
-privadas en archivos versionados. La moneda del marketplace se fija mediante
-`MARKETPLACE_CURRENCY_ID` (por defecto `1`).
+no usa las conexiones SQL/Mongo locales como fallback: si falta una variable
+necesaria, el servidor falla explícitamente al iniciar. Para volver a las bases
+locales en desarrollo, selecciona `DATABASE_PROFILE=local`. La moneda del
+marketplace se configura mediante `MARKETPLACE_CURRENCY_ID` (por defecto `1`).
+
+**CORS en la configuración actual:** `config/settings.py` establece
+`CORS_ALLOW_ALL_ORIGINS = True`; por lo tanto, el backend permite solicitudes
+desde cualquier origen web. No existe actualmente una lista por entorno basada
+en `FRONTEND_URL` o `CORS_ALLOWED_ORIGINS`, ni se habilitan credenciales CORS.
+Antes de exponer la API en producción, restringe CORS a los orígenes de confianza
+en la configuración Django y valida esa configuración en el entorno desplegado.
 
 Las migraciones de Django solo administran tablas internas de Django. No crean
 ni reparan las tablas de negocio SQL marcadas como `managed=False`. Comprueba la
@@ -572,8 +645,7 @@ completo, usa Swagger y realiza pruebas con datos de prueba en ambas bases.
 El proyecto Django publica todo desde `config/urls.py`. Conserva la portada que
 redirige a Swagger; el panel no reemplaza la documentación existente.
 
-En este equipo el puerto 8000 está ocupado por otra API (rutas `/sql/` y `/mongo/`).
-Esta web está configurada para el Django del proyecto en **8001**:
+Para ejecutar este servicio en el puerto **8001**:
 
 ```powershell
 python manage.py runserver 127.0.0.1:8001
@@ -590,13 +662,13 @@ de `usuarios_empresas_roles`; muestra el estado de ambas bases y enlaces útiles
 Devuelve 503 si una base no está lista y no muestra URI, usuarios ni contraseñas.
 La documentación y la configuración pública siguen accesibles si una base falla.
 
-La plantilla `config/conexiones.example.json` define los valores locales sin
-credenciales. El archivo `config/conexiones.local.json` se conserva privado e
-ignorado por Git, pero no se carga automaticamente para evitar que una URI o
-servidor remoto se use por accidente en desarrollo local. Para otra base, define
-`MONGODB_URI`, `MONGODB_DATABASE` y `SQLSERVER_DATABASE/HOST/PORT/USER/PASSWORD/
-DRIVER` como variables de entorno; estas prevalecen sobre los valores locales.
-En Azure, define esas variables en la configuracion de Application Settings.
+La plantilla `config/conexiones.example.json` define valores locales de ejemplo.
+Si existe, `config/conexiones.local.json` se carga después y puede reemplazarlos;
+ambos archivos están subordinados a las variables de entorno. El archivo local
+está ignorado por Git y se reserva para desarrollo: no lo incluyas en el
+despliegue. Para producción, establece `DATABASE_PROFILE=cloud` y configura
+`CLOUD_SQLSERVER_CONNECTION_STRING`, `CLOUD_MONGODB_URI` y
+`CLOUD_MONGODB_DATABASE` como variables/secretos del servicio.
 
 `javascripts/config.js` define la dirección inicial de Django. Al iniciar la web,
 `api.loadConfiguration()` consulta la ruta central de configuración y obtiene la
