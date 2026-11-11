@@ -15,6 +15,8 @@ SECRET_KEY = secret_key(BASE_DIR)
 DEBUG = False
 ALLOWED_HOSTS = ['*']
 
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 # =========================================================
 # APLICACIONES INSTALADAS
 # =========================================================
